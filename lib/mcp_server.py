@@ -22,6 +22,7 @@ from lib.index import (
     get_entry,
     load_index,
     list_entries,
+    save_index,
 )
 
 SERVER_NAME = "prism"
@@ -185,7 +186,47 @@ Recorded via MCP during coding session.
     )
     add_entry(entry)
 
+    # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous, <100ms)
+    try:
+        import io
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()  # Suppress sync's print() output
+        try:
+            from lib.sync import sync_claude_code
+            sync_claude_code(project_id)
+        finally:
+            sys.stdout = old_stdout
+    except Exception:
+        pass  # Don't let sync failure break MCP record
+
     return {"id": entry_id, "status": "created", "confidence": 0.9}
+
+
+def _reinforce_batch(entry_ids: list, boost: float = 0.02) -> None:
+    """Batch-update last_observed and confidence for returned entries (D-05).
+
+    Uses a single index load/save cycle to avoid N saves per search.
+    boost: confidence increase per reinforcement (0.02 for MCP query, smaller than
+    observation match at 0.05 -- Claude's discretion per CONTEXT.md).
+    """
+    if not entry_ids:
+        return
+    try:
+        index = load_index()
+        today = __import__("datetime").date.today().isoformat()
+        changed = False
+        for e in index.get("engrams", []):
+            if e["id"] in entry_ids:
+                e["last_observed"] = today
+                old_conf = e.get("confidence", 0.5)
+                # Cap at 0.95 -- only explicit user learn gets 0.9 starting, and
+                # reinforcement shouldn't push past that ceiling
+                e["confidence"] = round(min(0.95, old_conf + boost), 3)
+                changed = True
+        if changed:
+            save_index(index)
+    except Exception:
+        pass  # Never let reinforcement break MCP responses
 
 
 # --- MCP Protocol ---
@@ -258,6 +299,8 @@ def _handle_tool_call(name, arguments):
         )
         if not results:
             return {"content": [{"type": "text", "text": "No matching entries found."}]}
+        if results:
+            _reinforce_batch([r["id"] for r in results])
         lines = []
         for r in results:
             scope_tag = "[global]" if r.get("scope") == "global" else "[project]"
@@ -279,6 +322,8 @@ def _handle_tool_call(name, arguments):
         )
         if not results:
             return {"content": [{"type": "text", "text": "No relevant entries for this context."}]}
+        if results:
+            _reinforce_batch([r["id"] for r in results])
         lines = []
         for r in results:
             scope_tag = "[global]" if r.get("scope") == "global" else "[project]"
