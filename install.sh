@@ -42,7 +42,7 @@ echo "  Binary:  $BIN_DIR/prism"
 echo ""
 
 # 1. Create directory structure (SETUP-01)
-mkdir -p "$PRISM_HOME"/{global/engrams,archive,hooks,agents,lib,skills,projects}
+mkdir -p "$PRISM_HOME"/{global/engrams,archive,hooks,agents,lib,skills,projects,cache}
 mkdir -p "$BIN_DIR"
 
 # 2. Copy hooks (overwrite on upgrade)
@@ -65,7 +65,14 @@ if [ -d "$PRISM_REPO/skills" ]; then
     done
 fi
 
-# 4c. Copy schemas (overwrite on upgrade)
+# 4c. Copy registry template (overwrite on upgrade)
+if [ -d "$PRISM_REPO/templates/registry" ]; then
+    mkdir -p "$PRISM_HOME/templates/registry"
+    cp -r "$PRISM_REPO/templates/registry/." "$PRISM_HOME/templates/registry/"
+    echo "  Copied registry template"
+fi
+
+# 4d. Copy schemas (overwrite on upgrade)
 if [ -d "$PRISM_REPO/schemas" ]; then
     mkdir -p "$PRISM_HOME/schemas"
     cp "$PRISM_REPO/schemas/"*.json "$PRISM_HOME/schemas/" 2>/dev/null || true
