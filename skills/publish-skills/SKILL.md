@@ -11,57 +11,83 @@ Use when the user wants to publish extracted or promoted skills to a Prism skill
 
 - Skills must exist in `_analysis/extracted_skills_codebase/` (created by `/extract-skills` or `prism promote`)
 - Each skill directory must contain both `plugin.json` and `SKILL.md`
-- A registry must be configured in `~/.prism/config.json`
-- The `REGISTRY_TOKEN` environment variable must be set
+- A registry must be configured in `~/.prism/registries.json` (or legacy `~/.prism/config.json`)
+- The `REGISTRY_TOKEN` environment variable or per-registry token in `registries.json` must be available
 
 ## Flags
 
 | Flag | Effect |
 |------|--------|
 | `--all` | Publish all valid skills, ignoring delta state (force republish) |
-| `--registry NAME` | Target a specific named registry. In Phase 3, this is informational -- the command uses the `registry_url` from `~/.prism/config.json`. Multi-registry support (selecting from `registries.json`) is available in Phase 4. |
+| `--registry NAME` | Target a specific named registry from `registries.json`. If omitted, uses the default registry. The target must have `writable: true`. |
 
 ## Instructions
 
-### Step 1 -- Resolve configuration
+### Step 1 -- Resolve target registry
 
-Read the Prism config file at `~/.prism/config.json` and extract the `registry_url` value.
+Resolve the target registry from `~/.prism/registries.json` (with fallback to legacy `~/.prism/config.json`). If `--registry NAME` was specified, use that name; otherwise use the default registry.
 
-```bash
+```python
 python3 -c "
-import json, os
-config_path = os.path.expanduser('~/.prism/config.json')
+import json, os, sys
+reg_path = os.path.expanduser('~/.prism/registries.json')
 try:
-    with open(config_path) as f:
-        config = json.load(f)
-    url = config.get('registry_url', '')
-    print(url if url else 'NOT_CONFIGURED')
+    with open(reg_path) as f:
+        data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
+    data = {'registries': [], 'default': None}
+# Fall back to config.json migration
+if not data.get('registries'):
+    cfg_path = os.path.expanduser('~/.prism/config.json')
+    try:
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+        url = cfg.get('registry_url', '')
+        if url:
+            print(json.dumps({'name': 'default', 'url': url, 'token': '', 'writable': True}))
+            sys.exit(0)
+    except: pass
     print('NOT_CONFIGURED')
+    sys.exit(0)
+# Resolve target: --registry NAME or default
+target_name = None  # <-- set to registry name if --registry flag was provided
+if target_name is None:
+    target_name = data.get('default')
+if not target_name:
+    print('NO_DEFAULT')
+    sys.exit(0)
+for reg in data['registries']:
+    if reg['name'] == target_name:
+        if not reg.get('writable', True):
+            print('READ_ONLY:' + target_name)
+            sys.exit(0)
+        print(json.dumps(reg))
+        sys.exit(0)
+print('NOT_FOUND:' + str(target_name))
 "
 ```
 
-If the result is `NOT_CONFIGURED` or empty, tell the user:
+If `--registry NAME` flag was provided, set `target_name` to that registry name in the script above.
 
-> **No registry configured.** Set your registry URL:
-> ```
-> prism config registry_url https://your-worker.workers.dev
-> ```
+Handle output:
+- `NOT_CONFIGURED` -> tell user to run `prism registry add`
+- `NO_DEFAULT` -> tell user to run `prism registry default NAME`
+- `READ_ONLY:name` -> tell user the registry is read-only, cannot publish
+- `NOT_FOUND:name` -> registry not found in registries.json
 
-Then stop.
-
-Check the `REGISTRY_TOKEN` environment variable:
+If the result is valid JSON, extract `name`, `url`, and `token` fields. For the token, check `REGISTRY_TOKEN` env var first (takes precedence), then use the token from the registry entry:
 
 ```bash
 echo "${REGISTRY_TOKEN:+set}"
 ```
 
-If not set (empty output), tell the user:
+If `REGISTRY_TOKEN` is set, use it. Otherwise use the token from the resolved registry entry. If both are empty, tell the user:
 
-> **No API token found.** Set the `REGISTRY_TOKEN` environment variable with your registry API token:
+> **No API token found.** Set the `REGISTRY_TOKEN` environment variable or add a token to your registry:
 > ```
 > export REGISTRY_TOKEN="your-api-token"
 > ```
+> Or: `prism registry token create NAME`
 
 Then stop.
 
@@ -159,8 +185,9 @@ for skill_name in VALID_SKILLS:
             h.update(f.read())
     content_hash = h.hexdigest()[:12]
 
-    # Check against published state for "default" registry
-    prev = published.get(skill_name, {}).get("default", {})
+    # Check against published state for the target registry name
+    registry_name = ""  # <-- set to resolved registry name from Step 1
+    prev = published.get(skill_name, {}).get(registry_name, {})
     prev_hash = prev.get("content_hash", "")
 
     if content_hash == prev_hash:
@@ -274,10 +301,12 @@ PUBLISHED_SKILLS = []  # <-- list of (skill_name, content_hash) from Steps 3-4
 
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+REGISTRY_NAME = ""  # <-- set to resolved registry name from Step 1
+
 for skill_name, content_hash in PUBLISHED_SKILLS:
     if skill_name not in published:
         published[skill_name] = {}
-    published[skill_name]["default"] = {
+    published[skill_name][REGISTRY_NAME] = {
         "published_at": now,
         "content_hash": content_hash,
     }
@@ -322,15 +351,15 @@ The delta tracking file at `_analysis/.published.json` has this structure:
 ```
 
 - Top-level keys are skill names
-- Second-level keys are registry names (`"default"` for the single registry in Phase 3; named registries in Phase 4)
+- Second-level keys are registry names (e.g., `"team"`, `"community"`, or `"default"` for legacy/migrated registries)
 - `content_hash` is the first 12 hex characters of SHA256(`plugin.json` bytes + `SKILL.md` bytes)
 - `published_at` is the UTC timestamp of the last successful publish
 
 ## Important differences from previous approaches
 
 - **Worker-only publishing** -- skills are published via the registry Worker API (`POST /api/skills/publish`). There is no GitHub-direct publishing path.
-- **Registry URL from config** -- the target registry is read from `~/.prism/config.json` key `registry_url`, not from environment variables.
-- **Auth token from env** -- the API token comes from `REGISTRY_TOKEN` environment variable (not stored in config to avoid accidental commits).
+- **Registry from registries.json** -- the target registry is resolved from `~/.prism/registries.json` (with fallback to legacy `config.json` `registry_url`). Use `--registry NAME` or the default registry.
+- **Auth token resolution** -- checks `REGISTRY_TOKEN` env var first (backward compat), then per-registry token from `registries.json`.
 - **Delta tracking** -- `.published.json` tracks content hashes so only changed skills are republished. This avoids unnecessary API calls and makes publish idempotent.
 - **Atomic writes** -- `.published.json` is written via temp file + rename to prevent corruption.
 

@@ -9,12 +9,12 @@ Use when the user wants to find skills relevant to a task or architectural decis
 
 ## Configuration
 
-- **Primary source:** Remote registry at the URL configured in `~/.prism/config.json` key `registry_url`
+- **Primary source:** All configured registries in `~/.prism/registries.json` (with per-registry caching and source tagging)
 - **Fallback 1:** Local `skill-registry.json` in the current project directory
 - **Fallback 2:** Local `_analysis/extracted_skills_codebase/` skill directories
-- **Authentication:** `REGISTRY_TOKEN` environment variable (required for remote registry access)
+- **Authentication:** `REGISTRY_TOKEN` environment variable (global override) or per-registry token from `registries.json`
 
-> **Phase 3 scope:** Full multi-registry support (searching across multiple named registries with source tagging) is available when multiple registries are configured. Currently queries the configured registry or local skills.
+> Skills from multiple registries are merged and each result is tagged with `[registry-name]` (e.g., `[team]`, `[community]`) to identify the source.
 
 ## Instructions
 
@@ -22,65 +22,85 @@ Use when the user wants to find skills relevant to a task or architectural decis
 
 Try to load a skill registry in this order. Stop at the first successful source.
 
-**1a. Remote registry (preferred):**
+**1a. All configured registries (preferred):**
 
-Read `~/.prism/config.json` and check for a non-empty `registry_url` value:
+Fetch from ALL configured registries in `~/.prism/registries.json`, merge results, and tag each skill with its source registry name:
 
 ```python
 python3 -c "
-import json, os
-config_path = os.path.expanduser('~/.prism/config.json')
+import json, os, time, sys
+import urllib.request, urllib.error
+reg_path = os.path.expanduser('~/.prism/registries.json')
+cache_dir = os.path.expanduser('~/.prism/cache')
 try:
-    with open(config_path) as f:
-        config = json.load(f)
-    url = config.get('registry_url', '')
-    print(url if url else '')
+    with open(reg_path) as f:
+        data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
-    print('')
+    data = {'registries': []}
+# Fall back to config.json migration
+if not data.get('registries'):
+    cfg_path = os.path.expanduser('~/.prism/config.json')
+    try:
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+        url = cfg.get('registry_url', '')
+        if url:
+            data = {'registries': [{'name': 'default', 'url': url, 'token': ''}]}
+    except: pass
+all_skills = []
+for reg in data.get('registries', []):
+    name = reg['name']
+    url = reg['url'].rstrip('/')
+    token = os.environ.get('REGISTRY_TOKEN', reg.get('token', ''))
+    cache_path = os.path.join(cache_dir, f'{name}.json')
+    # Check cache (24h mtime TTL = 86400 seconds)
+    try:
+        if os.path.exists(cache_path):
+            age = time.time() - os.path.getmtime(cache_path)
+            if age < 86400:
+                with open(cache_path) as f:
+                    cached = json.load(f)
+                for s in cached.get('skills', []):
+                    s['_registry'] = name
+                    all_skills.append(s)
+                continue
+    except: pass
+    # Fetch fresh
+    try:
+        headers = {'User-Agent': 'Prism/1.0'}
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
+        req = urllib.request.Request(f'{url}/api/skills/registry', headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            fetched = json.loads(resp.read().decode())
+        os.makedirs(cache_dir, exist_ok=True)
+        tmp = cache_path + '.tmp'
+        with open(tmp, 'w') as f: json.dump(fetched, f)
+        os.rename(tmp, cache_path)
+        for s in fetched.get('skills', []):
+            s['_registry'] = name
+            all_skills.append(s)
+    except Exception as e:
+        print(f'Warning: could not reach {name}: {e}', file=sys.stderr)
+        # Try stale cache
+        try:
+            if os.path.exists(cache_path):
+                with open(cache_path) as f:
+                    cached = json.load(f)
+                for s in cached.get('skills', []):
+                    s['_registry'] = name
+                    all_skills.append(s)
+        except: pass
+if all_skills:
+    print(json.dumps(all_skills))
+else:
+    print('NO_REGISTRIES')
 "
 ```
 
-If `registry_url` is configured, fetch the registry index:
+If the result is valid JSON (an array of skills), use it as the skills list. Each skill has a `_registry` field indicating its source.
 
-```python
-python3 << 'PYEOF'
-import json, os, urllib.request, urllib.error
-
-registry_url = ""  # <-- from config
-token = os.environ.get("REGISTRY_TOKEN", "")
-
-req = urllib.request.Request(
-    f"{registry_url}/api/skills/registry",
-    headers={"User-Agent": "Prism/1.0"},
-)
-if token:
-    req.add_header("Authorization", f"Bearer {token}")
-
-try:
-    with urllib.request.urlopen(req) as resp:
-        registry = json.loads(resp.read().decode())
-        skills = registry.get("skills", [])
-        print(f"Loaded {len(skills)} skill(s) from remote registry")
-except urllib.error.HTTPError as e:
-    if e.code in (401, 403):
-        print("AUTH_FAILED")
-    else:
-        print(f"FETCH_FAILED: HTTP {e.code}")
-except urllib.error.URLError as e:
-    print(f"FETCH_FAILED: {e.reason}")
-PYEOF
-```
-
-If the fetch returns `AUTH_FAILED`, tell the user:
-
-> **Registry requires authentication.** Set the `REGISTRY_TOKEN` environment variable:
-> ```
-> export REGISTRY_TOKEN="your-api-token"
-> ```
-
-Then stop.
-
-If the fetch fails for other reasons, proceed to fallback sources.
+If the result is `NO_REGISTRIES`, proceed to fallback sources.
 
 **1b. Local skill-registry.json (fallback):**
 
@@ -124,7 +144,7 @@ Note in the output: "Using local extracted skills (no remote registry or skill-r
 If none of the above sources are available, tell the user:
 
 > **No skill registry available.** Options:
-> 1. Configure a registry: `prism config registry_url <URL>`
+> 1. Add a registry: `prism registry add NAME --url URL --token TOKEN`
 > 2. Place `skill-registry.json` in the project root
 > 3. Run `/extract-skills` to create local skills
 
@@ -146,11 +166,11 @@ Rank matches by relevance to the user's query.
 
 ### Step 5 -- Respond with match table
 
-Respond with a table using only registry metadata (no fetching yet):
+Respond with a table using only registry metadata (no fetching yet). If the skill has a `_registry` field, prefix the skill name with `[registry-name]` to show the source:
 
 | Skill Name | Repository | Why it matches |
 |---|---|---|
-| {name} | {repository} | {why it matches this query} |
+| [registry-name] {name} | {repository} | {why it matches this query} |
 
 If no skills match the query, state that clearly and list all available skill names with their one-line descriptions so the user can see what is available and refine their query. Stop here.
 
