@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Skill Plugin",
+  "type": "object",
+  "required": ["name", "description", "author", "repository", "category", "source", "commit_date"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)+$",
+      "description": "Kebab-case skill name, at least 2 words"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Short description of the skill"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "architecture",
+          "execution-control",
+          "state-memory",
+          "persistence",
+          "networking",
+          "tools",
+          "RAG",
+          "data-learning",
+          "security",
+          "monitoring-evaluation",
+          "operations-deployment"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Skill categories (primary first)"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Source identifier (e.g. 'prism', 'internal', 'external')"
+    },
+    "commit_date": {
+      "type": "string",
+      "description": "Date of the commit or publish"
+    },
+    "source_hash": {
+      "type": ["string", "null"],
+      "description": "Content hash from source repo, or null if unavailable"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+name = "prism-registry"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+# These are set via `wrangler secret put` -- NOT here
+# GH_TOKEN = "your github pat"
+# REGISTRY_TOKENS = "token1,token2,token3"
+
+[vars]
+GH_OWNER = "YOUR_GITHUB_ORG"
+GH_REPO = "YOUR_REGISTRY_REPO"
+GH_BRANCH = "main"

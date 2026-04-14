@@ -1,0 +1,30 @@
+name: Validate Skills PR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+  pull_request:
+    paths:
+      - 'skills/**'
+
+jobs:
+  validate-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          pip install -q jsonschema
+
+      - name: Validate skills
+        run: |
+          set -euo pipefail
+          python scripts/validate.py

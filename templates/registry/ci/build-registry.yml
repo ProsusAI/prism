@@ -1,0 +1,37 @@
+name: Build Registry Index
+
+on:
+  workflow_run:
+    workflows: ["Validate Skills PR"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-registry:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build skill-registry.json
+        run: python scripts/build_registry.py
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add skill-registry.json
+          if git diff --staged --quiet; then
+            echo "No registry changes"
+            exit 0
+          fi
+          git commit -m "Update skill-registry.json"
+          git push

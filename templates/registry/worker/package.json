@@ -1,0 +1,14 @@
+{
+  "name": "prism-registry",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.82.0",
+    "@cloudflare/workers-types": "^4.20260414.0",
+    "typescript": "^5.8.0"
+  }
+}
