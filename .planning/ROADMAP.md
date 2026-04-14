@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Repo scaffold: copy and rename all Engram lib/*.py, create install.sh, CLI wrapper, capture.sh shell, agents, templates
 - [x] 01-02-PLAN.md — CLI commands: prism init (JSON merge into settings.local.json), prism config, prism log with --json, wire CLI router
-- [ ] 01-03-PLAN.md — Observation pipeline: lib/capture.py (stdin JSON processing, scrubbing, JSONL append, triggers), expanded scrub patterns
+- [x] 01-03-PLAN.md — Observation pipeline: lib/capture.py (stdin JSON processing, scrubbing, JSONL append, triggers), expanded scrub patterns
 
 ### Phase 2: Personal Knowledge Loop
 **Goal**: Prism extracts validated knowledge from observations, user can manage engrams manually, knowledge flows back into Claude Code sessions through push and pull channels, and knowledge stays fresh through confidence decay and reinforcement

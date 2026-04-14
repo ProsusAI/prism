@@ -24,13 +24,13 @@
 
 ### Observation Capture
 
-- [ ] **OBS-01**: `capture.sh` hook receives JSON on stdin (`tool_name`, `tool_input`, `session_id`) from PreToolUse/PostToolUse
-- [ ] **OBS-02**: `capture.sh` scrubs secrets before writing (API keys, tokens, bearer, sk-*, ghp-*)
-- [ ] **OBS-03**: `capture.sh` truncates `input_summary` to 500 chars
-- [ ] **OBS-04**: `capture.sh` appends JSONL line to `~/.prism/projects/<hash>/observations.jsonl`
-- [ ] **OBS-05**: `capture.sh` never blocks Claude Code (exit 0 always, background spawns)
-- [ ] **OBS-06**: `capture.sh` spawns background extraction at 15 observations
-- [ ] **OBS-07**: `capture.sh` spawns background session review every 5 observations
+- [x] **OBS-01**: `capture.sh` hook receives JSON on stdin (`tool_name`, `tool_input`, `session_id`) from PreToolUse/PostToolUse
+- [x] **OBS-02**: `capture.sh` scrubs secrets before writing (API keys, tokens, bearer, sk-*, ghp-*)
+- [x] **OBS-03**: `capture.sh` truncates `input_summary` to 500 chars
+- [x] **OBS-04**: `capture.sh` appends JSONL line to `~/.prism/projects/<hash>/observations.jsonl`
+- [x] **OBS-05**: `capture.sh` never blocks Claude Code (exit 0 always, background spawns)
+- [x] **OBS-06**: `capture.sh` spawns background extraction at 15 observations
+- [x] **OBS-07**: `capture.sh` spawns background session review every 5 observations
 - [x] **OBS-08**: `prism log [--last N] [--insights]` shows recent observations
 
 ### Knowledge Extraction
@@ -161,13 +161,13 @@
 | SETUP-12 | Phase 1 | Complete |
 | SETUP-13 | Phase 1 | Complete |
 | SETUP-14 | Phase 1 | Complete |
-| OBS-01 | Phase 1 | Pending |
-| OBS-02 | Phase 1 | Pending |
-| OBS-03 | Phase 1 | Pending |
-| OBS-04 | Phase 1 | Pending |
-| OBS-05 | Phase 1 | Pending |
-| OBS-06 | Phase 1 | Pending |
-| OBS-07 | Phase 1 | Pending |
+| OBS-01 | Phase 1 | Complete |
+| OBS-02 | Phase 1 | Complete |
+| OBS-03 | Phase 1 | Complete |
+| OBS-04 | Phase 1 | Complete |
+| OBS-05 | Phase 1 | Complete |
+| OBS-06 | Phase 1 | Complete |
+| OBS-07 | Phase 1 | Complete |
 | OBS-08 | Phase 1 | Complete |
 | EXT-01 | Phase 2 | Pending |
 | EXT-02 | Phase 2 | Pending |
