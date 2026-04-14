@@ -602,22 +602,17 @@ DEFAULT_SCRUB_PATTERNS = [
 | A2 | PostToolUse hooks support `async: true` for non-blocking capture | Architecture Patterns | If async not supported for PostToolUse specifically, hook will run synchronously (minor perf impact, not blocking) |
 | A3 | `install.sh` should create the `prism` CLI wrapper at `~/.prism/prism` and symlink to `~/.local/bin/prism` (instead of Engram's pattern of symlinking to repo script) | Architecture Patterns | If user prefers repo-linked pattern, auto-updates from git pull won't apply to installed copy (requires re-running install.sh) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Python minimum version enforcement**
+1. **Python minimum version enforcement** -- RESOLVED
    - What we know: System Python is 3.9.6. CLAUDE.md says 3.12+. Engram code uses only 3.6+ features.
-   - What's unclear: Should `install.sh` hard-fail on Python 3.9-3.11, or just warn?
-   - Recommendation: Warn if < 3.12 but don't fail. The code works on 3.9+. Add a comment documenting the real minimum.
+   - Decision: install.sh warns (not fails) if python3 --version < 3.12. The code uses only 3.6+ features and works on 3.9+. A version check prints a warning like: "WARNING: Python 3.12+ recommended (found 3.x.x). Prism should work but is untested on older versions." This is implemented in Plan 01-01 Task 2 (install.sh prerequisite checks).
 
-2. **CLI wrapper: symlink to repo vs copy to ~/.prism/**
-   - What we know: Engram symlinks to repo script (auto-updates on git pull). Design doc says "Create CLI wrapper -> ~/.local/bin/prism".
-   - What's unclear: Should the wrapper be a symlink to `~/.prism/prism` (which is a copy updated by install.sh), or a symlink to the repo's `prism` script (auto-updates)?
-   - Recommendation: Copy to `~/.prism/prism`, symlink `~/.local/bin/prism` -> `~/.prism/prism`. This way install.sh updates are explicit. For `curl | bash` path, no repo exists to link to.
+2. **CLI wrapper: symlink to repo vs copy to ~/.prism/** -- RESOLVED
+   - Decision: Copy to ~/.prism/prism, symlink ~/.local/bin/prism -> ~/.prism/prism. Updates are explicit via install.sh re-run. For curl|bash path, no repo exists to link to. Implemented in Plan 01-01 Task 2.
 
-3. **`capture.py` vs inline capture logic in `capture.sh`**
-   - What we know: Decision D-08 says single Python invocation. D-09 says pipe stdin.
-   - What's unclear: Should capture logic be a separate `lib/capture.py` or embedded in `scrub.py`/`commands.py`?
-   - Recommendation: New file `lib/capture.py` -- it's the hot path (runs on every tool use), deserves its own module for clarity and testability.
+3. **capture.py vs inline capture logic in capture.sh** -- RESOLVED
+   - Decision: New file lib/capture.py -- it is the hot path (runs on every tool use), deserves its own module for clarity and testability. Implemented in Plan 01-03 Task 1.
 
 ## Environment Availability
 
