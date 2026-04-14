@@ -65,9 +65,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Promotion bridge: lib/bridge.py cmd_promote, CLI wiring, config update, schema + install.sh skills copy
-- [ ] 03-02-PLAN.md — Tier 1 + Tier 2 slash commands: 9 commands copied/adapted from Lens (analysis, extraction, mining, curation)
-- [ ] 03-03-PLAN.md — Tier 3 slash commands: unified /publish-skills with delta tracking, /advise-skills and /audit-code for Prism config
+- [x] 03-01-PLAN.md — Promotion bridge: lib/bridge.py cmd_promote, CLI wiring, config update, schema + install.sh skills copy
+- [x] 03-02-PLAN.md — Tier 1 + Tier 2 slash commands: 9 commands copied/adapted from Lens (analysis, extraction, mining, curation)
+- [x] 03-03-PLAN.md — Tier 3 slash commands: unified /publish-skills with delta tracking, /advise-skills and /audit-code for Prism config
 
 ### Phase 4: Registry
 **Goal**: Teams can create, configure, and manage shared skill registries backed by GitHub repos and Cloudflare Workers, with full multi-registry support for reading, writing, and querying across organizational boundaries
