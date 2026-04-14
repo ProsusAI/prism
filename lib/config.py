@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "decay_rate_per_week": 0.02,    # confidence decay per week without observation
     "archive_threshold": 0.2,       # archive entries below this confidence
     "publish_min_confidence": 0.7,  # minimum confidence to publish to team
+    "publish_min_evidence": 3,      # minimum evidence count to publish to team
     "max_context_lines": 100,       # max lines in generated context file
     "scrub_patterns": [
         r"(?i)(api[_-]?key|secret|token|password|credential)\s*[:=]\s*\S+",

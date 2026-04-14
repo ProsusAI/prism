@@ -55,6 +55,22 @@ cp "$PRISM_REPO/agents/"*.md "$PRISM_HOME/agents/"
 # 4. Copy lib (overwrite on upgrade)
 cp "$PRISM_REPO"/lib/*.py "$PRISM_HOME/lib/"
 
+# 4b. Copy slash command skills (overwrite on upgrade)
+if [ -d "$PRISM_REPO/skills" ]; then
+    for skill_dir in "$PRISM_REPO/skills"/*/; do
+        [ -d "$skill_dir" ] || continue
+        skill_name=$(basename "$skill_dir")
+        mkdir -p "$PRISM_HOME/skills/$skill_name"
+        cp "$skill_dir"* "$PRISM_HOME/skills/$skill_name/" 2>/dev/null || true
+    done
+fi
+
+# 4c. Copy schemas (overwrite on upgrade)
+if [ -d "$PRISM_REPO/schemas" ]; then
+    mkdir -p "$PRISM_HOME/schemas"
+    cp "$PRISM_REPO/schemas/"*.json "$PRISM_HOME/schemas/" 2>/dev/null || true
+fi
+
 # 5. Copy CLI wrapper (overwrite on upgrade)
 cp "$PRISM_REPO/prism" "$PRISM_HOME/prism"
 chmod +x "$PRISM_HOME/prism"

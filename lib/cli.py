@@ -50,6 +50,11 @@ def main() -> None:
     # maintain
     subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
 
+    # promote
+    p_promote = subparsers.add_parser("promote", help="Promote engram to publishable skill format")
+    p_promote.add_argument("id", help="Engram ID to promote")
+    p_promote.add_argument("--name", dest="skill_name", help="Override auto-generated skill name")
+
     # procedures
     p_procs = subparsers.add_parser("procedures", help="List procedures with stats")
     p_procs.add_argument("--project", help="Override project ID")
@@ -145,6 +150,10 @@ def main() -> None:
     elif args.command == "maintain":
         from .commands import cmd_maintain
         cmd_maintain()
+
+    elif args.command == "promote":
+        from .bridge import cmd_promote
+        cmd_promote(args.id, name_override=args.skill_name)
 
     elif args.command == "procedures":
         from .commands import cmd_procedures
