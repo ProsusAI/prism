@@ -302,9 +302,12 @@ tags: [manual]
     )
     add_entry(entry)
 
+    # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
+    from .sync import sync_claude_code
+    sync_claude_code(project_id)
+
     print(f"Learned: {entry_id} (confidence: 0.9)")
     print(f"File: {filepath}")
-    print("Run 'prism sync' to update IDE context files.")
 
 
 def cmd_forget(entry_id: str) -> None:
@@ -325,8 +328,13 @@ def cmd_forget(entry_id: str) -> None:
 
     # Remove from index
     remove_entry(entry_id)
+    # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
+    from .project import detect_project_id as _detect_pid
+    from .sync import sync_claude_code
+    pid = entry.get("project_id", _detect_pid())
+    sync_claude_code(pid)
+
     print(f"Forgot: {entry_id}")
-    print("Run 'prism sync' to update IDE context files.")
 
 
 def cmd_correct(entry_id: str, correction_text: str) -> None:
@@ -390,8 +398,11 @@ tags: [manual, correction]
     )
     add_entry(entry)
 
+    # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
+    from .sync import sync_claude_code
+    sync_claude_code(project_id)
+
     print(f"Corrected: {entry_id} -> {new_id} (confidence: 0.9)")
-    print("Run 'prism sync' to update IDE context files.")
 
 
 def cmd_maintain() -> None:
@@ -441,6 +452,13 @@ def cmd_maintain() -> None:
             decayed += 1
 
     print(f"Maintenance complete: {decayed} decayed, {archived} archived")
+
+    # Auto-sync .claude/prism.md if anything changed (CTX-04, D-07)
+    if decayed > 0 or archived > 0:
+        from .project import detect_project_id
+        from .sync import sync_claude_code
+        project_id = detect_project_id()
+        sync_claude_code(project_id)
 
 
 def cmd_procedures(project_id: Optional[str] = None) -> None:
