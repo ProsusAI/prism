@@ -41,11 +41,11 @@
 - [ ] **EXT-04**: Extraction produces typed engrams: preference, correction, procedure, domain_fact, tool_pattern, error_recipe
 - [ ] **EXT-05**: Post-extraction: archive observations, regenerate `.claude/prism.md`
 - [ ] **EXT-06**: `prism extract [--project <id>]` triggers extraction pipeline manually
-- [ ] **EXT-07**: Constitution safety principles (`constitution.md`) are loaded during validation and never overwritten by updates
-- [ ] **EXT-08**: Background session reviewer (Haiku, no tools) scans session transcripts for corrections, preferences, design decisions, domain knowledge, non-obvious solutions
-- [ ] **EXT-09**: Session reviewer appends findings as observations feeding into next extraction cycle
+- [x] **EXT-07**: Constitution safety principles (`constitution.md`) are loaded during validation and never overwritten by updates
+- [x] **EXT-08**: Background session reviewer (Haiku, no tools) scans session transcripts for corrections, preferences, design decisions, domain knowledge, non-obvious solutions
+- [x] **EXT-09**: Session reviewer appends findings as observations feeding into next extraction cycle
 - [ ] **EXT-10**: `prism review --session <id>` triggers session review manually
-- [ ] **EXT-11**: `prism analyze-sessions [--all]` bootstraps engrams from past Claude Code session transcripts
+- [x] **EXT-11**: `prism analyze-sessions [--all]` bootstraps engrams from past Claude Code session transcripts
 - [ ] **EXT-12**: Validation decisions logged to `validation-log.jsonl` for auditability
 
 ### Engram Management
@@ -61,7 +61,7 @@
 - [ ] **ENG-09**: `prism maintain` runs decay cycle and archives expired engrams
 - [ ] **ENG-10**: `prism procedures` lists procedures with success/failure stats
 - [ ] **ENG-11**: Global engrams stored in `~/.prism/global/engrams/`, project engrams in `~/.prism/projects/<hash>/engrams/`
-- [ ] **ENG-12**: Analyzed sessions tracked in `analyzed-sessions.json` to prevent re-processing
+- [x] **ENG-12**: Analyzed sessions tracked in `analyzed-sessions.json` to prevent re-processing
 
 ### Context Injection
 
@@ -175,11 +175,11 @@
 | EXT-04 | Phase 2 | Pending |
 | EXT-05 | Phase 2 | Pending |
 | EXT-06 | Phase 2 | Pending |
-| EXT-07 | Phase 2 | Pending |
-| EXT-08 | Phase 2 | Pending |
-| EXT-09 | Phase 2 | Pending |
+| EXT-07 | Phase 2 | Complete |
+| EXT-08 | Phase 2 | Complete |
+| EXT-09 | Phase 2 | Complete |
 | EXT-10 | Phase 2 | Pending |
-| EXT-11 | Phase 2 | Pending |
+| EXT-11 | Phase 2 | Complete |
 | EXT-12 | Phase 2 | Pending |
 | ENG-01 | Phase 2 | Pending |
 | ENG-02 | Phase 2 | Pending |
@@ -192,7 +192,7 @@
 | ENG-09 | Phase 2 | Pending |
 | ENG-10 | Phase 2 | Pending |
 | ENG-11 | Phase 2 | Pending |
-| ENG-12 | Phase 2 | Pending |
+| ENG-12 | Phase 2 | Complete |
 | CTX-01 | Phase 2 | Pending |
 | CTX-02 | Phase 2 | Pending |
 | CTX-03 | Phase 2 | Pending |
