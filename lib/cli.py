@@ -73,6 +73,8 @@ def main() -> None:
                             help="Show what would be analyzed without writing")
     p_sessions.add_argument("--list", action="store_true", dest="list_sessions",
                             help="List available sessions and counts")
+    p_sessions.add_argument("--since", help="Only analyze sessions after DATE (YYYY-MM-DD)")
+    p_sessions.add_argument("--last", type=int, help="Only analyze last N sessions")
     p_sessions.add_argument("--project", help="Override project ID")
 
     # config
@@ -178,7 +180,11 @@ def _cmd_analyze_sessions(args) -> None:
         project_id = detect_project_id()
 
     if args.list_sessions:
-        sessions = list_sessions(project_filter=None if args.all_projects else project_id)
+        sessions = list_sessions(
+            project_filter=None if args.all_projects else project_id,
+            since_date=args.since,
+            last_n=args.last,
+        )
         if not sessions:
             print("No sessions found.")
             return
@@ -200,6 +206,8 @@ def _cmd_analyze_sessions(args) -> None:
         project_filter=project_id,
         all_projects=args.all_projects,
         dry_run=args.dry_run,
+        since_date=args.since,
+        last_n=args.last,
     )
 
     print("\nSummary:")

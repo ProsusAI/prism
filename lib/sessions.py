@@ -92,7 +92,21 @@ def _should_analyze(session_id: str, file_size: int, tracker: dict) -> bool:
     return entry.get("file_size", 0) != file_size
 
 
-def list_sessions(project_filter: "str | None" = None) -> list[dict]:
+def _session_date(jsonl_path_str: str) -> "date":
+    """Extract approximate date from session file modification time."""
+    from datetime import date as date_type
+    try:
+        mtime = os.path.getmtime(jsonl_path_str)
+        return date_type.fromtimestamp(mtime)
+    except OSError:
+        return date_type.min
+
+
+def list_sessions(
+    project_filter: "str | None" = None,
+    since_date: "str | None" = None,
+    last_n: "int | None" = None,
+) -> list[dict]:
     """List available sessions with metadata.
 
     Returns list of dicts: {path, session_id, folder_name, size, cwd, line_count}.
@@ -144,6 +158,19 @@ def list_sessions(project_filter: "str | None" = None) -> list[dict]:
                 "project_id": pid,
                 "line_count": line_count,
             })
+
+    # Filter by date if --since provided
+    if since_date:
+        try:
+            from datetime import date as date_type
+            cutoff = date_type.fromisoformat(since_date)
+            sessions = [s for s in sessions if _session_date(s["path"]) >= cutoff]
+        except ValueError:
+            pass  # Invalid date format, skip filter
+
+    # Limit to last N if --last provided
+    if last_n is not None and last_n > 0:
+        sessions = sessions[-last_n:]
 
     return sessions
 
@@ -322,6 +349,8 @@ def analyze_all_sessions(
     project_filter: "str | None" = None,
     all_projects: bool = False,
     dry_run: bool = False,
+    since_date: "str | None" = None,
+    last_n: "int | None" = None,
 ) -> dict:
     """Analyze sessions and write observations.
 
@@ -337,7 +366,11 @@ def analyze_all_sessions(
         project_filter = detect_project_id()
 
     tracker = _load_tracker()
-    sessions = list_sessions(project_filter=None if all_projects else project_filter)
+    sessions = list_sessions(
+        project_filter=None if all_projects else project_filter,
+        since_date=since_date,
+        last_n=last_n,
+    )
 
     processed = 0
     skipped = 0
