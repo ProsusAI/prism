@@ -7,13 +7,13 @@
 
 ### Installation & Setup
 
-- [ ] **SETUP-01**: `install.sh` creates `~/.prism/` tree (lib, agents, hooks, skills, global/engrams, archive) and copies all components
-- [ ] **SETUP-02**: `install.sh` creates CLI wrapper at `~/.local/bin/prism`
-- [ ] **SETUP-03**: `install.sh` writes default `config.json` and empty `index.json`
-- [ ] **SETUP-04**: `install.sh` copies `constitution.md` template (only if not exists -- never overwrites)
-- [ ] **SETUP-05**: `install.sh` is idempotent -- re-running updates lib/agents/hooks/skills but preserves config, index, constitution, project data
-- [ ] **SETUP-06**: `install.sh` checks prerequisites (python3, git, claude) before proceeding
-- [ ] **SETUP-07**: `install.sh` works from both `curl | bash` (public) and `git clone` (private repo) paths
+- [x] **SETUP-01**: `install.sh` creates `~/.prism/` tree (lib, agents, hooks, skills, global/engrams, archive) and copies all components
+- [x] **SETUP-02**: `install.sh` creates CLI wrapper at `~/.local/bin/prism`
+- [x] **SETUP-03**: `install.sh` writes default `config.json` and empty `index.json`
+- [x] **SETUP-04**: `install.sh` copies `constitution.md` template (only if not exists -- never overwrites)
+- [x] **SETUP-05**: `install.sh` is idempotent -- re-running updates lib/agents/hooks/skills but preserves config, index, constitution, project data
+- [x] **SETUP-06**: `install.sh` checks prerequisites (python3, git, claude) before proceeding
+- [x] **SETUP-07**: `install.sh` works from both `curl | bash` (public) and `git clone` (private repo) paths
 - [ ] **SETUP-08**: `prism init` detects project ID from git remote (SHA256[:12] of origin URL)
 - [ ] **SETUP-09**: `prism init` configures hooks in `.claude/settings.local.json` (PreToolUse + PostToolUse)
 - [ ] **SETUP-10**: `prism init` registers MCP server in `.claude/settings.local.json`
@@ -147,13 +147,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SETUP-01 | Phase 1 | Pending |
-| SETUP-02 | Phase 1 | Pending |
-| SETUP-03 | Phase 1 | Pending |
-| SETUP-04 | Phase 1 | Pending |
-| SETUP-05 | Phase 1 | Pending |
-| SETUP-06 | Phase 1 | Pending |
-| SETUP-07 | Phase 1 | Pending |
+| SETUP-01 | Phase 1 | Complete |
+| SETUP-02 | Phase 1 | Complete |
+| SETUP-03 | Phase 1 | Complete |
+| SETUP-04 | Phase 1 | Complete |
+| SETUP-05 | Phase 1 | Complete |
+| SETUP-06 | Phase 1 | Complete |
+| SETUP-07 | Phase 1 | Complete |
 | SETUP-08 | Phase 1 | Pending |
 | SETUP-09 | Phase 1 | Pending |
 | SETUP-10 | Phase 1 | Pending |
