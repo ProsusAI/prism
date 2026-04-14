@@ -35,40 +35,40 @@
 
 ### Knowledge Extraction
 
-- [ ] **EXT-01**: Two-phase extraction: Haiku proposes candidates from observations, writes to `candidates/`
-- [ ] **EXT-02**: Sonnet validates candidates through 4 gates: constitution, evidence, contradiction, safety
-- [ ] **EXT-03**: Approved candidates move to `engrams/` and are added to index; rejected are deleted with logged reason; modified are adjusted then moved
-- [ ] **EXT-04**: Extraction produces typed engrams: preference, correction, procedure, domain_fact, tool_pattern, error_recipe
-- [ ] **EXT-05**: Post-extraction: archive observations, regenerate `.claude/prism.md`
-- [ ] **EXT-06**: `prism extract [--project <id>]` triggers extraction pipeline manually
+- [x] **EXT-01**: Two-phase extraction: Haiku proposes candidates from observations, writes to `candidates/`
+- [x] **EXT-02**: Sonnet validates candidates through 4 gates: constitution, evidence, contradiction, safety
+- [x] **EXT-03**: Approved candidates move to `engrams/` and are added to index; rejected are deleted with logged reason; modified are adjusted then moved
+- [x] **EXT-04**: Extraction produces typed engrams: preference, correction, procedure, domain_fact, tool_pattern, error_recipe
+- [x] **EXT-05**: Post-extraction: archive observations, regenerate `.claude/prism.md`
+- [x] **EXT-06**: `prism extract [--project <id>]` triggers extraction pipeline manually
 - [x] **EXT-07**: Constitution safety principles (`constitution.md`) are loaded during validation and never overwritten by updates
 - [x] **EXT-08**: Background session reviewer (Haiku, no tools) scans session transcripts for corrections, preferences, design decisions, domain knowledge, non-obvious solutions
 - [x] **EXT-09**: Session reviewer appends findings as observations feeding into next extraction cycle
-- [ ] **EXT-10**: `prism review --session <id>` triggers session review manually
+- [x] **EXT-10**: `prism review --session <id>` triggers session review manually
 - [x] **EXT-11**: `prism analyze-sessions [--all]` bootstraps engrams from past Claude Code session transcripts
-- [ ] **EXT-12**: Validation decisions logged to `validation-log.jsonl` for auditability
+- [x] **EXT-12**: Validation decisions logged to `validation-log.jsonl` for auditability
 
 ### Engram Management
 
 - [ ] **ENG-01**: Engrams stored as markdown files with YAML frontmatter (confidence, evidence count, timestamps, type, source)
 - [ ] **ENG-02**: Master engram index (`index.json`) tracks all engrams with CRUD operations
-- [ ] **ENG-03**: `prism learn "<text>" [--scope global]` creates engram at confidence 0.9, auto-syncs `.claude/prism.md`
-- [ ] **ENG-04**: `prism correct <id> "<text>"` supersedes engram with correction, auto-syncs
-- [ ] **ENG-05**: `prism forget <id>` archives engram (recoverable), auto-syncs
+- [x] **ENG-03**: `prism learn "<text>" [--scope global]` creates engram at confidence 0.9, auto-syncs `.claude/prism.md`
+- [x] **ENG-04**: `prism correct <id> "<text>"` supersedes engram with correction, auto-syncs
+- [x] **ENG-05**: `prism forget <id>` archives engram (recoverable), auto-syncs
 - [ ] **ENG-06**: `prism status [--project <id>]` shows engrams, stats, and health
 - [ ] **ENG-07**: Confidence lifecycle: decay -0.02/week without reinforcement, bump on reoccurrence
 - [ ] **ENG-08**: Engrams archive at confidence threshold 0.2 (moved to `archive/`, recoverable)
-- [ ] **ENG-09**: `prism maintain` runs decay cycle and archives expired engrams
+- [x] **ENG-09**: `prism maintain` runs decay cycle and archives expired engrams
 - [ ] **ENG-10**: `prism procedures` lists procedures with success/failure stats
 - [ ] **ENG-11**: Global engrams stored in `~/.prism/global/engrams/`, project engrams in `~/.prism/projects/<hash>/engrams/`
 - [x] **ENG-12**: Analyzed sessions tracked in `analyzed-sessions.json` to prevent re-processing
 
 ### Context Injection
 
-- [ ] **CTX-01**: Push layer: `prism sync` regenerates `.claude/prism.md` with priority ordering (corrections > pinned > top preferences > session-validated > publish-ready)
-- [ ] **CTX-02**: Push layer respects max context lines (default 100, configurable)
-- [ ] **CTX-03**: Push layer includes MCP nudge footer ("Use prism_search for relevant knowledge...")
-- [ ] **CTX-04**: `.claude/prism.md` auto-regenerated after: learn, correct, forget, extract, maintain
+- [x] **CTX-01**: Push layer: `prism sync` regenerates `.claude/prism.md` with priority ordering (corrections > pinned > top preferences > session-validated > publish-ready)
+- [x] **CTX-02**: Push layer respects max context lines (default 100, configurable)
+- [x] **CTX-03**: Push layer includes MCP nudge footer ("Use prism_search for relevant knowledge...")
+- [x] **CTX-04**: `.claude/prism.md` auto-regenerated after: learn, correct, forget, extract, maintain
 - [ ] **CTX-05**: MCP server provides `prism_search` tool (natural language search across engrams)
 - [ ] **CTX-06**: MCP server provides `prism_get` tool (read full engram by ID)
 - [ ] **CTX-07**: MCP server provides `prism_relevant` tool (find engrams for current file/domain)
@@ -169,34 +169,34 @@
 | OBS-06 | Phase 1 | Complete |
 | OBS-07 | Phase 1 | Complete |
 | OBS-08 | Phase 1 | Complete |
-| EXT-01 | Phase 2 | Pending |
-| EXT-02 | Phase 2 | Pending |
-| EXT-03 | Phase 2 | Pending |
-| EXT-04 | Phase 2 | Pending |
-| EXT-05 | Phase 2 | Pending |
-| EXT-06 | Phase 2 | Pending |
+| EXT-01 | Phase 2 | Complete |
+| EXT-02 | Phase 2 | Complete |
+| EXT-03 | Phase 2 | Complete |
+| EXT-04 | Phase 2 | Complete |
+| EXT-05 | Phase 2 | Complete |
+| EXT-06 | Phase 2 | Complete |
 | EXT-07 | Phase 2 | Complete |
 | EXT-08 | Phase 2 | Complete |
 | EXT-09 | Phase 2 | Complete |
-| EXT-10 | Phase 2 | Pending |
+| EXT-10 | Phase 2 | Complete |
 | EXT-11 | Phase 2 | Complete |
-| EXT-12 | Phase 2 | Pending |
+| EXT-12 | Phase 2 | Complete |
 | ENG-01 | Phase 2 | Pending |
 | ENG-02 | Phase 2 | Pending |
-| ENG-03 | Phase 2 | Pending |
-| ENG-04 | Phase 2 | Pending |
-| ENG-05 | Phase 2 | Pending |
+| ENG-03 | Phase 2 | Complete |
+| ENG-04 | Phase 2 | Complete |
+| ENG-05 | Phase 2 | Complete |
 | ENG-06 | Phase 2 | Pending |
 | ENG-07 | Phase 2 | Pending |
 | ENG-08 | Phase 2 | Pending |
-| ENG-09 | Phase 2 | Pending |
+| ENG-09 | Phase 2 | Complete |
 | ENG-10 | Phase 2 | Pending |
 | ENG-11 | Phase 2 | Pending |
 | ENG-12 | Phase 2 | Complete |
-| CTX-01 | Phase 2 | Pending |
-| CTX-02 | Phase 2 | Pending |
-| CTX-03 | Phase 2 | Pending |
-| CTX-04 | Phase 2 | Pending |
+| CTX-01 | Phase 2 | Complete |
+| CTX-02 | Phase 2 | Complete |
+| CTX-03 | Phase 2 | Complete |
+| CTX-04 | Phase 2 | Complete |
 | CTX-05 | Phase 2 | Pending |
 | CTX-06 | Phase 2 | Pending |
 | CTX-07 | Phase 2 | Pending |
