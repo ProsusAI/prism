@@ -107,10 +107,10 @@
 - [x] **REG-06**: `prism registry token create NAME` — generate new API token
 - [x] **REG-07**: `prism registry token revoke NAME TOKEN` — revoke an API token
 - [x] **REG-08**: Registry template bundled in tool repo (Worker source, CI workflows, validation schema, build scripts)
-- [ ] **REG-09**: Multi-registry reads: merge `skill-registry.json` from all sources, cache locally with 24h TTL
-- [ ] **REG-10**: Multi-registry writes: publish delta only (tracked via `.published.json` with content hashes per registry)
-- [ ] **REG-11**: Query results tagged with source registry (e.g., `[team]`, `[community]`)
-- [ ] **REG-12**: `/publish-skills` resolves target registry, checks writable, diffs against `.published.json`, POSTs delta
+- [x] **REG-09**: Multi-registry reads: merge `skill-registry.json` from all sources, cache locally with 24h TTL
+- [x] **REG-10**: Multi-registry writes: publish delta only (tracked via `.published.json` with content hashes per registry)
+- [x] **REG-11**: Query results tagged with source registry (e.g., `[team]`, `[community]`)
+- [x] **REG-12**: `/publish-skills` resolves target registry, checks writable, diffs against `.published.json`, POSTs delta
 
 ## v2 Requirements
 
@@ -226,10 +226,10 @@
 | REG-06 | Phase 4 | Complete |
 | REG-07 | Phase 4 | Complete |
 | REG-08 | Phase 4 | Complete |
-| REG-09 | Phase 4 | Pending |
-| REG-10 | Phase 4 | Pending |
-| REG-11 | Phase 4 | Pending |
-| REG-12 | Phase 4 | Pending |
+| REG-09 | Phase 4 | Complete |
+| REG-10 | Phase 4 | Complete |
+| REG-11 | Phase 4 | Complete |
+| REG-12 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 83 total
