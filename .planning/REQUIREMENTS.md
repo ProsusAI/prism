@@ -14,13 +14,13 @@
 - [x] **SETUP-05**: `install.sh` is idempotent -- re-running updates lib/agents/hooks/skills but preserves config, index, constitution, project data
 - [x] **SETUP-06**: `install.sh` checks prerequisites (python3, git, claude) before proceeding
 - [x] **SETUP-07**: `install.sh` works from both `curl | bash` (public) and `git clone` (private repo) paths
-- [ ] **SETUP-08**: `prism init` detects project ID from git remote (SHA256[:12] of origin URL)
-- [ ] **SETUP-09**: `prism init` configures hooks in `.claude/settings.local.json` (PreToolUse + PostToolUse)
-- [ ] **SETUP-10**: `prism init` registers MCP server in `.claude/settings.local.json`
-- [ ] **SETUP-11**: `prism init` symlinks slash commands from `~/.prism/skills/` to `.claude/skills/`
-- [ ] **SETUP-12**: `prism init` adds `.claude/skills/`, `.claude/prism.md`, `.claude/settings.local.json` to `.gitignore`
-- [ ] **SETUP-13**: `prism init` generates initial `.claude/prism.md` (push layer)
-- [ ] **SETUP-14**: `prism config [key] [value]` gets/sets configuration values
+- [x] **SETUP-08**: `prism init` detects project ID from git remote (SHA256[:12] of origin URL)
+- [x] **SETUP-09**: `prism init` configures hooks in `.claude/settings.local.json` (PreToolUse + PostToolUse)
+- [x] **SETUP-10**: `prism init` registers MCP server in `.claude/settings.local.json`
+- [x] **SETUP-11**: `prism init` symlinks slash commands from `~/.prism/skills/` to `.claude/skills/`
+- [x] **SETUP-12**: `prism init` adds `.claude/skills/`, `.claude/prism.md`, `.claude/settings.local.json` to `.gitignore`
+- [x] **SETUP-13**: `prism init` generates initial `.claude/prism.md` (push layer)
+- [x] **SETUP-14**: `prism config [key] [value]` gets/sets configuration values
 
 ### Observation Capture
 
@@ -31,7 +31,7 @@
 - [ ] **OBS-05**: `capture.sh` never blocks Claude Code (exit 0 always, background spawns)
 - [ ] **OBS-06**: `capture.sh` spawns background extraction at 15 observations
 - [ ] **OBS-07**: `capture.sh` spawns background session review every 5 observations
-- [ ] **OBS-08**: `prism log [--last N] [--insights]` shows recent observations
+- [x] **OBS-08**: `prism log [--last N] [--insights]` shows recent observations
 
 ### Knowledge Extraction
 
@@ -154,13 +154,13 @@
 | SETUP-05 | Phase 1 | Complete |
 | SETUP-06 | Phase 1 | Complete |
 | SETUP-07 | Phase 1 | Complete |
-| SETUP-08 | Phase 1 | Pending |
-| SETUP-09 | Phase 1 | Pending |
-| SETUP-10 | Phase 1 | Pending |
-| SETUP-11 | Phase 1 | Pending |
-| SETUP-12 | Phase 1 | Pending |
-| SETUP-13 | Phase 1 | Pending |
-| SETUP-14 | Phase 1 | Pending |
+| SETUP-08 | Phase 1 | Complete |
+| SETUP-09 | Phase 1 | Complete |
+| SETUP-10 | Phase 1 | Complete |
+| SETUP-11 | Phase 1 | Complete |
+| SETUP-12 | Phase 1 | Complete |
+| SETUP-13 | Phase 1 | Complete |
+| SETUP-14 | Phase 1 | Complete |
 | OBS-01 | Phase 1 | Pending |
 | OBS-02 | Phase 1 | Pending |
 | OBS-03 | Phase 1 | Pending |
@@ -168,7 +168,7 @@
 | OBS-05 | Phase 1 | Pending |
 | OBS-06 | Phase 1 | Pending |
 | OBS-07 | Phase 1 | Pending |
-| OBS-08 | Phase 1 | Pending |
+| OBS-08 | Phase 1 | Complete |
 | EXT-01 | Phase 2 | Pending |
 | EXT-02 | Phase 2 | Pending |
 | EXT-03 | Phase 2 | Pending |

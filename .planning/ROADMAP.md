@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md — Repo scaffold: copy and rename all Engram lib/*.py, create install.sh, CLI wrapper, capture.sh shell, agents, templates
-- [ ] 01-02-PLAN.md — CLI commands: prism init (JSON merge into settings.local.json), prism config, prism log with --json, wire CLI router
+- [x] 01-02-PLAN.md — CLI commands: prism init (JSON merge into settings.local.json), prism config, prism log with --json, wire CLI router
 - [ ] 01-03-PLAN.md — Observation pipeline: lib/capture.py (stdin JSON processing, scrubbing, JSONL append, triggers), expanded scrub patterns
 
 ### Phase 2: Personal Knowledge Loop
