@@ -334,19 +334,19 @@ sync_claude_code(project_id)
 
 **All other claims in this research were verified against the codebase or CLAUDE.md.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Reinforcement Confidence Boost Amount**
+1. **Reinforcement Confidence Boost Amount** (RESOLVED -- Plan 04 uses query_boost=0.02, Claude's discretion)
    - What we know: D-05 says reinforce on both observation match and MCP query match. Claude's discretion area.
    - What's unclear: Exact boost value. Observation match could be +0.05 (strong signal -- pattern recurred). MCP query could be +0.01 (weaker signal -- just accessed, not necessarily reconfirmed).
    - Recommendation: Start with observation_boost=0.05, query_boost=0.02, make configurable in config.json. Easy to tune later.
 
-2. **MCP Record Auto-Sync Latency**
+2. **MCP Record Auto-Sync Latency** (RESOLVED -- Plan 04 does the sync per D-07)
    - What we know: D-07 says sync is synchronous, <100ms. prism_record is called during active MCP session.
    - What's unclear: Whether adding sync to every MCP record call creates noticeable latency for the user.
    - Recommendation: Do the sync -- 100ms is imperceptible. If it becomes a problem, queue it.
 
-3. **Agent Prompt Refinement Depth**
+3. **Agent Prompt Refinement Depth** (RESOLVED -- Plan 01 specifies detailed refinement per D-01)
    - What we know: D-01 says "not just find-replace; improve wording where Prism context differs." Claude's discretion on specifics.
    - What's unclear: How much to rewrite vs. polish. Current prompts are functional.
    - Recommendation: Add Prism ecosystem references (promotion-to-skill path, registry awareness, scope tagging), update naming, improve examples. Don't restructure the prompt logic.
