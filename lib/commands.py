@@ -659,6 +659,113 @@ def _collect_observation_files(current: Path, archive_dir: Path) -> list:
     return files
 
 
+def cmd_registry(args) -> None:
+    """Dispatch registry subcommands: add, remove, list, default, create, token."""
+    from .registry import (
+        add_registry, remove_registry, list_registries,
+        set_default_registry, get_registry, generate_token,
+    )
+
+    subcmd = getattr(args, "registry_command", None)
+
+    if subcmd is None:
+        # No subcommand -- print help
+        print("Usage: prism registry {create|add|remove|list|default|token}")
+        print()
+        print("Commands:")
+        print("  create    Create a new registry (guided wizard)")
+        print("  add       Add a registry")
+        print("  remove    Remove a registry")
+        print("  list      Show configured registries")
+        print("  default   Set default write target")
+        print("  token     Manage API tokens")
+        return
+
+    if subcmd == "create":
+        print("Registry creation wizard requires the registry template (Phase 4 Plan 02).")
+        print("Use \033[1mprism registry add\033[0m for manual setup.")
+        return
+
+    if subcmd == "add":
+        try:
+            add_registry(args.name, args.url, args.token, writable=not args.read_only)
+            print("\033[32mRegistry '{}' added ({})\033[0m".format(args.name, args.url))
+        except ValueError as e:
+            print("\033[31mError: {}\033[0m".format(e))
+        return
+
+    if subcmd == "remove":
+        try:
+            remove_registry(args.name)
+            print("\033[32mRegistry '{}' removed.\033[0m".format(args.name))
+        except ValueError as e:
+            print("\033[31mError: {}\033[0m".format(e))
+        return
+
+    if subcmd == "list":
+        entries = list_registries()
+        if not entries:
+            print("No registries configured. Use \033[1mprism registry add\033[0m to get started.")
+            return
+        # Formatted table
+        print()
+        print("  {:<12} {:<40} {:<10} {}".format("Name", "URL", "Writable", "Default"))
+        print("  {} {} {} {}".format("-" * 12, "-" * 40, "-" * 10, "-" * 7))
+        for entry in entries:
+            default_marker = "*" if entry["is_default"] else ""
+            writable_str = "yes" if entry["writable"] else "no"
+            print("  {:<12} {:<40} {:<10} {}".format(
+                entry["name"], entry["url"][:40], writable_str, default_marker))
+        print()
+        return
+
+    if subcmd == "default":
+        try:
+            set_default_registry(args.name)
+            print("\033[32mDefault registry set to '{}'\033[0m".format(args.name))
+        except ValueError as e:
+            print("\033[31mError: {}\033[0m".format(e))
+        return
+
+    if subcmd == "token":
+        token_cmd = getattr(args, "token_command", None)
+
+        if token_cmd is None:
+            print("Usage: prism registry token {create|revoke} NAME")
+            return
+
+        if token_cmd == "create":
+            try:
+                reg = get_registry(args.name)
+            except ValueError as e:
+                print("\033[31mError: {}\033[0m".format(e))
+                return
+
+            new_token = generate_token()
+            print()
+            print("Generated token for registry '{}':\n".format(args.name))
+            print("  \033[1m{}\033[0m".format(new_token))
+            print()
+            print("Add this token to your Worker:")
+            print("  wrangler secret put REGISTRY_TOKENS")
+            print("  Then paste: <existing_tokens>,{}".format(new_token))
+            print()
+            print("To save locally:")
+            print("  prism registry add {} --url {} --token {}".format(
+                args.name, reg.get("url", ""), new_token))
+            return
+
+        if token_cmd == "revoke":
+            token_value = args.token_value
+            print()
+            print("To revoke token for registry '{}':".format(args.name))
+            print()
+            print("Remove '{}' from your Worker's REGISTRY_TOKENS:".format(token_value))
+            print("  wrangler secret put REGISTRY_TOKENS")
+            print("  Paste the updated comma-separated list without the revoked token.")
+            return
+
+
 def _text_to_id(text: str) -> str:
     """Convert a text string to a kebab-case ID."""
     import re

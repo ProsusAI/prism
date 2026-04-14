@@ -88,6 +88,42 @@ def main() -> None:
     p_config.add_argument("key", nargs="?", help="Config key")
     p_config.add_argument("value", nargs="?", help="Config value to set")
 
+    # registry
+    registry_parser = subparsers.add_parser("registry", help="Manage skill registries")
+    registry_sub = registry_parser.add_subparsers(dest="registry_command")
+
+    # registry create
+    registry_sub.add_parser("create", help="Create a new registry (guided wizard)")
+
+    # registry add
+    reg_add = registry_sub.add_parser("add", help="Add a registry")
+    reg_add.add_argument("name", help="Registry name (kebab-case)")
+    reg_add.add_argument("--url", required=True, help="Registry Worker URL")
+    reg_add.add_argument("--token", default="", help="API token")
+    reg_add.add_argument("--read-only", action="store_true", dest="read_only", help="Mark as read-only")
+
+    # registry remove
+    reg_rm = registry_sub.add_parser("remove", help="Remove a registry")
+    reg_rm.add_argument("name", help="Registry name to remove")
+
+    # registry list
+    registry_sub.add_parser("list", help="Show configured registries")
+
+    # registry default
+    reg_def = registry_sub.add_parser("default", help="Set default write target")
+    reg_def.add_argument("name", help="Registry name to set as default")
+
+    # registry token
+    token_parser = registry_sub.add_parser("token", help="Manage API tokens")
+    token_sub = token_parser.add_subparsers(dest="token_command")
+
+    token_create = token_sub.add_parser("create", help="Generate a new API token")
+    token_create.add_argument("name", help="Registry name")
+
+    token_revoke = token_sub.add_parser("revoke", help="Revoke an API token")
+    token_revoke.add_argument("name", help="Registry name")
+    token_revoke.add_argument("token_value", help="Token to revoke")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -171,6 +207,10 @@ def main() -> None:
     elif args.command == "config":
         from .commands import cmd_config
         cmd_config(args.key, args.value)
+
+    elif args.command == "registry":
+        from .commands import cmd_registry
+        cmd_registry(args)
 
     else:
         parser.print_help()
