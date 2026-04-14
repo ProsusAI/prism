@@ -69,7 +69,10 @@ def cmd_promote(entry_id, name_override=None):
         return
 
     # Read engram content
-    entry_path = PRISM_HOME / entry.get("path", "")
+    entry_path = (PRISM_HOME / entry.get("path", "")).resolve()
+    if not str(entry_path).startswith(str(PRISM_HOME.resolve())):
+        print("Security: path escapes PRISM_HOME: {}".format(entry_path))
+        return
     if not entry_path.exists():
         print("Engram file not found: {}".format(entry_path))
         return
