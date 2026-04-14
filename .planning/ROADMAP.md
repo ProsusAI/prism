@@ -78,11 +78,12 @@ Plans:
   2. User can manage multiple registries with `prism registry add/remove/list/default` and manage API tokens with `prism registry token create/revoke`
   3. Multi-registry reads merge `skill-registry.json` from all configured sources with 24h TTL cache, and query results are tagged with source registry (e.g., `[team]`, `[community]`)
   4. `/advise-skills` and `/audit-code` search across all configured registries, and `/publish-skills` tracks deltas per-registry via `.published.json` with content hashes
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md — Registry config layer: lib/registry.py CRUD, CLI subcommand group, token management
+- [ ] 04-02-PLAN.md — Registry template bundle: Cloudflare Worker, CI workflows, scripts, schema, install.sh update
+- [ ] 04-03-PLAN.md — Multi-registry reads/writes: fetch+cache+merge, create wizard, slash command updates
 
 ## Progress
 
