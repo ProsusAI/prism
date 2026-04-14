@@ -69,11 +69,11 @@
 - [x] **CTX-02**: Push layer respects max context lines (default 100, configurable)
 - [x] **CTX-03**: Push layer includes MCP nudge footer ("Use prism_search for relevant knowledge...")
 - [x] **CTX-04**: `.claude/prism.md` auto-regenerated after: learn, correct, forget, extract, maintain
-- [ ] **CTX-05**: MCP server provides `prism_search` tool (natural language search across engrams)
-- [ ] **CTX-06**: MCP server provides `prism_get` tool (read full engram by ID)
-- [ ] **CTX-07**: MCP server provides `prism_relevant` tool (find engrams for current file/domain)
-- [ ] **CTX-08**: MCP server provides `prism_record` tool (create new engram mid-session at confidence 0.9)
-- [ ] **CTX-09**: MCP server communicates via stdio JSON-RPC (implements initialize, tools/list, tools/call, ping)
+- [x] **CTX-05**: MCP server provides `prism_search` tool (natural language search across engrams)
+- [x] **CTX-06**: MCP server provides `prism_get` tool (read full engram by ID)
+- [x] **CTX-07**: MCP server provides `prism_relevant` tool (find engrams for current file/domain)
+- [x] **CTX-08**: MCP server provides `prism_record` tool (create new engram mid-session at confidence 0.9)
+- [x] **CTX-09**: MCP server communicates via stdio JSON-RPC (implements initialize, tools/list, tools/call, ping)
 
 ### Bridge (Engram to Skill)
 
@@ -197,11 +197,11 @@
 | CTX-02 | Phase 2 | Complete |
 | CTX-03 | Phase 2 | Complete |
 | CTX-04 | Phase 2 | Complete |
-| CTX-05 | Phase 2 | Pending |
-| CTX-06 | Phase 2 | Pending |
-| CTX-07 | Phase 2 | Pending |
-| CTX-08 | Phase 2 | Pending |
-| CTX-09 | Phase 2 | Pending |
+| CTX-05 | Phase 2 | Complete |
+| CTX-06 | Phase 2 | Complete |
+| CTX-07 | Phase 2 | Complete |
+| CTX-08 | Phase 2 | Complete |
+| CTX-09 | Phase 2 | Complete |
 | BRG-01 | Phase 3 | Pending |
 | BRG-02 | Phase 3 | Pending |
 | BRG-03 | Phase 3 | Pending |

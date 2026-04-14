@@ -51,7 +51,7 @@ Plans:
 - [x] 02-01-PLAN.md — Agent prompt refinement for Prism ecosystem context, session analysis --since/--last flags
 - [x] 02-02-PLAN.md — Auto-sync wiring for learn/correct/forget/maintain/extract, post-extraction sync
 - [x] 02-03-PLAN.md — Unified scope-tagged status display, lifecycle decay/archive verification
-- [ ] 02-04-PLAN.md — MCP server scope tagging, batch reinforcement, record auto-sync
+- [x] 02-04-PLAN.md — MCP server scope tagging, batch reinforcement, record auto-sync
 - [ ] 02-05-PLAN.md — Integration verification suite and human end-to-end checkpoint
 
 ### Phase 3: Bridge + Slash Commands
