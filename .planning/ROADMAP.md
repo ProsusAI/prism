@@ -28,12 +28,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User can run `prism init` in any git project and have hooks, MCP server, slash command symlinks, and `.claude/prism.md` configured automatically
   3. Claude Code tool usage is captured as JSONL observations with secrets scrubbed, without any perceptible delay to the user's Claude Code session
   4. User can run `prism log` to see recent observations and `prism config` to manage settings
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md — Repo scaffold: copy and rename all Engram lib/*.py, create install.sh, CLI wrapper, capture.sh shell, agents, templates
+- [ ] 01-02-PLAN.md — CLI commands: prism init (JSON merge into settings.local.json), prism config, prism log with --json, wire CLI router
+- [ ] 01-03-PLAN.md — Observation pipeline: lib/capture.py (stdin JSON processing, scrubbing, JSONL append, triggers), expanded scrub patterns
 
 ### Phase 2: Personal Knowledge Loop
 **Goal**: Prism extracts validated knowledge from observations, user can manage engrams manually, knowledge flows back into Claude Code sessions through push and pull channels, and knowledge stays fresh through confidence decay and reinforcement
@@ -88,7 +88,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation + Observation | 0/3 | Not started | - |
+| 1. Foundation + Observation | 0/3 | Planning complete | - |
 | 2. Personal Knowledge Loop | 0/3 | Not started | - |
 | 3. Bridge + Slash Commands | 0/2 | Not started | - |
 | 4. Registry | 0/2 | Not started | - |
