@@ -1,6 +1,7 @@
 """Prism CLI - main command router."""
 
 import argparse
+import os
 import sys
 
 
@@ -209,7 +210,8 @@ def _cmd_analyze_sessions(args) -> None:
         for s in sessions:
             by_project.setdefault(s["project_id"], []).append(s)
         for pid, sess_list in sorted(by_project.items()):
-            name = __import__("os").path.basename(sess_list[0]["cwd"].rstrip("/")) if sess_list[0]["cwd"] else pid
+            cwd = sess_list[0].get("cwd") or ""
+            name = os.path.basename(cwd.rstrip("/")) if cwd else pid
             total_size = sum(s["size"] for s in sess_list)
             print("{} ({}): {} sessions, {:.0f} KB".format(name, pid, len(sess_list), total_size / 1024))
         return
