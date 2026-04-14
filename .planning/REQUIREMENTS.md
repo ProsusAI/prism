@@ -50,17 +50,17 @@
 
 ### Engram Management
 
-- [ ] **ENG-01**: Engrams stored as markdown files with YAML frontmatter (confidence, evidence count, timestamps, type, source)
-- [ ] **ENG-02**: Master engram index (`index.json`) tracks all engrams with CRUD operations
+- [x] **ENG-01**: Engrams stored as markdown files with YAML frontmatter (confidence, evidence count, timestamps, type, source)
+- [x] **ENG-02**: Master engram index (`index.json`) tracks all engrams with CRUD operations
 - [x] **ENG-03**: `prism learn "<text>" [--scope global]` creates engram at confidence 0.9, auto-syncs `.claude/prism.md`
 - [x] **ENG-04**: `prism correct <id> "<text>"` supersedes engram with correction, auto-syncs
 - [x] **ENG-05**: `prism forget <id>` archives engram (recoverable), auto-syncs
-- [ ] **ENG-06**: `prism status [--project <id>]` shows engrams, stats, and health
-- [ ] **ENG-07**: Confidence lifecycle: decay -0.02/week without reinforcement, bump on reoccurrence
-- [ ] **ENG-08**: Engrams archive at confidence threshold 0.2 (moved to `archive/`, recoverable)
+- [x] **ENG-06**: `prism status [--project <id>]` shows engrams, stats, and health
+- [x] **ENG-07**: Confidence lifecycle: decay -0.02/week without reinforcement, bump on reoccurrence
+- [x] **ENG-08**: Engrams archive at confidence threshold 0.2 (moved to `archive/`, recoverable)
 - [x] **ENG-09**: `prism maintain` runs decay cycle and archives expired engrams
-- [ ] **ENG-10**: `prism procedures` lists procedures with success/failure stats
-- [ ] **ENG-11**: Global engrams stored in `~/.prism/global/engrams/`, project engrams in `~/.prism/projects/<hash>/engrams/`
+- [x] **ENG-10**: `prism procedures` lists procedures with success/failure stats
+- [x] **ENG-11**: Global engrams stored in `~/.prism/global/engrams/`, project engrams in `~/.prism/projects/<hash>/engrams/`
 - [x] **ENG-12**: Analyzed sessions tracked in `analyzed-sessions.json` to prevent re-processing
 
 ### Context Injection
@@ -181,17 +181,17 @@
 | EXT-10 | Phase 2 | Complete |
 | EXT-11 | Phase 2 | Complete |
 | EXT-12 | Phase 2 | Complete |
-| ENG-01 | Phase 2 | Pending |
-| ENG-02 | Phase 2 | Pending |
+| ENG-01 | Phase 2 | Complete |
+| ENG-02 | Phase 2 | Complete |
 | ENG-03 | Phase 2 | Complete |
 | ENG-04 | Phase 2 | Complete |
 | ENG-05 | Phase 2 | Complete |
-| ENG-06 | Phase 2 | Pending |
-| ENG-07 | Phase 2 | Pending |
-| ENG-08 | Phase 2 | Pending |
+| ENG-06 | Phase 2 | Complete |
+| ENG-07 | Phase 2 | Complete |
+| ENG-08 | Phase 2 | Complete |
 | ENG-09 | Phase 2 | Complete |
-| ENG-10 | Phase 2 | Pending |
-| ENG-11 | Phase 2 | Pending |
+| ENG-10 | Phase 2 | Complete |
+| ENG-11 | Phase 2 | Complete |
 | ENG-12 | Phase 2 | Complete |
 | CTX-01 | Phase 2 | Complete |
 | CTX-02 | Phase 2 | Complete |
