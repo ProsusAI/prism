@@ -69,6 +69,13 @@ def run_extraction(project_id: str) -> dict:
         # Apply results
         _apply_validation_results(project_id, results)
 
+        # Post-extraction: sync .claude/prism.md with new engrams (EXT-05, CTX-04)
+        try:
+            from .sync import sync_claude_code
+            sync_claude_code(project_id)
+        except Exception:
+            pass  # Don't let sync failure break extraction
+
         return results
     finally:
         lock.unlink(missing_ok=True)

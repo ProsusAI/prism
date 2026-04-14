@@ -105,6 +105,13 @@ def main() -> None:
         print("\nResults: {} extracted, {} approved, {} rejected, {} modified".format(
             results['extracted'], results['approved'],
             results['rejected'], results['modified']))
+        # Ensure sync happened (EXT-05 belt-and-suspenders)
+        if results['approved'] > 0 or results['modified'] > 0:
+            try:
+                from .sync import sync_claude_code
+                sync_claude_code(project_id)
+            except Exception:
+                pass
 
     elif args.command == "review":
         from .review import run_review
