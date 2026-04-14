@@ -260,8 +260,8 @@ def _handle_tool_call(name, arguments):
             return {"content": [{"type": "text", "text": "No matching entries found."}]}
         lines = []
         for r in results:
-            source = f" ({r.get('source', 'local')})" if r.get("source") else ""
-            lines.append(f"- **{r['id']}** [{r['kind']}] (conf: {r.get('confidence', '?')}{source}): {r.get('trigger', '')}")
+            scope_tag = "[global]" if r.get("scope") == "global" else "[project]"
+            lines.append(f"- {scope_tag} **{r['id']}** [{r['kind']}] (conf: {r.get('confidence', '?')}): {r.get('trigger', '')}")
         return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
     elif name == "prism_get":
@@ -281,7 +281,8 @@ def _handle_tool_call(name, arguments):
             return {"content": [{"type": "text", "text": "No relevant entries for this context."}]}
         lines = []
         for r in results:
-            lines.append(f"- **{r['id']}** [{r['kind']}] (conf: {r.get('confidence', '?')}): {r.get('trigger', '')}")
+            scope_tag = "[global]" if r.get("scope") == "global" else "[project]"
+            lines.append(f"- {scope_tag} **{r['id']}** [{r['kind']}] (conf: {r.get('confidence', '?')}): {r.get('trigger', '')}")
         return {"content": [{"type": "text", "text": "\n".join(lines)}]}
 
     elif name == "prism_record":
