@@ -11,7 +11,6 @@ import re
 import secrets
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -22,7 +21,6 @@ from .config import PRISM_HOME, get_config
 
 REGISTRIES_PATH = PRISM_HOME / "registries.json"
 CACHE_DIR = PRISM_HOME / "cache"
-CACHE_TTL = 86400  # 24 hours in seconds
 
 # Kebab-case validation: lowercase alphanumeric with hyphens, no leading/trailing hyphen
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
@@ -236,54 +234,66 @@ def resolve_token(registry: dict) -> str:
 
 
 def get_cached_registry(name: str, url: str, token: str) -> dict:
-    """Fetch a registry's skill-registry.json with per-registry mtime-based cache (D-04).
+    """Fetch a registry's skill-registry.json using ETag-based conditional GET (D-04).
 
-    Cache path: ~/.prism/cache/{name}.json with 24h TTL based on os.path.getmtime.
+    Cache path: ~/.prism/cache/{name}.json stores skills + '_etag' field.
+    On each call, sends If-None-Match if a cached ETag exists. Server returns:
+      304 Not Modified — no body, use cached data (registry unchanged)
+      200 OK           — fresh data + new ETag, replace cache
     On fetch failure, returns stale cache if available, otherwise {"skills": []}.
     Each urllib.request.urlopen has timeout=15 to mitigate T-04-11 (DoS from unreachable registry).
     """
     cache_path = CACHE_DIR / f"{name}.json"
 
-    # Check cache freshness via mtime
+    # Load cached data and extract stored ETag if available
+    cached = None
+    stored_etag = None
     if cache_path.exists():
         try:
-            age = time.time() - os.path.getmtime(str(cache_path))
-            if age < CACHE_TTL:
-                with open(cache_path) as f:
-                    return json.load(f)
+            with open(cache_path) as f:
+                cached = json.load(f)
+            stored_etag = cached.get("_etag")
         except (OSError, json.JSONDecodeError):
-            pass
+            cached = None
 
-    # Fetch fresh from registry Worker API
+    # Build request — conditional GET if we have a cached ETag
     headers = {"User-Agent": "Prism/1.0"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if stored_etag:
+        headers["If-None-Match"] = stored_etag
 
     try:
         req = urllib.request.Request(
             f"{url.rstrip('/')}/api/skills/registry",
             headers=headers,
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+                new_etag = resp.headers.get("ETag")
+        except urllib.error.HTTPError as e:
+            if e.code == 304 and cached is not None:
+                return cached  # 304 Not Modified — registry unchanged, use cache
+            raise
 
-        # Write cache atomically (Pitfall 4: ensure cache dir exists)
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = str(cache_path) + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(data, f)
-        os.rename(tmp, str(cache_path))
+        # Only cache non-empty results — an empty skills list is likely transient.
+        if data.get("skills"):
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            cache_data = dict(data)
+            if new_etag:
+                cache_data["_etag"] = new_etag
+            tmp = str(cache_path) + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(cache_data, f)
+            os.rename(tmp, str(cache_path))
         return data
 
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
-        # On failure, return stale cache if available
-        if cache_path.exists():
+        # On failure, return stale cache if available (no time limit — stale beats nothing)
+        if cached:
             print(f"Warning: could not reach registry '{name}': {e}. Using stale cache.", file=sys.stderr)
-            try:
-                with open(cache_path) as f:
-                    return json.load(f)
-            except (OSError, json.JSONDecodeError):
-                pass
+            return cached
         print(f"Warning: could not reach registry '{name}': {e}", file=sys.stderr)
         return {"skills": []}
 

@@ -67,6 +67,17 @@ function authenticate(request: Request, env: Env): boolean {
   return validTokens.some((valid) => timingSafeEqual(token, valid));
 }
 
+/** Compute a quoted ETag from content using SHA-256 (first 16 hex chars) */
+async function computeETag(content: string): Promise<string> {
+  const encoded = new TextEncoder().encode(content);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 16);
+  return `"${hashHex}"`;
+}
+
 /** Fetch a raw file from the private GitHub repo */
 async function fetchFromGitHub(
   env: Env,
@@ -300,9 +311,23 @@ export default {
       const resp = await fetchFromGitHub(env, "skill-registry.json");
       if (!resp.ok) return json({ error: "Failed to fetch registry" }, resp.status);
       const body = await resp.text();
+      const etag = await computeETag(body);
+
+      // Conditional GET: return 304 if client already has this version
+      if (request.headers.get("If-None-Match") === etag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            "ETag": etag,
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+
       return new Response(body, {
         headers: {
           "Content-Type": "application/json",
+          "ETag": etag,
           "Access-Control-Allow-Origin": "*",
         },
       });

@@ -28,7 +28,7 @@ Fetch from ALL configured registries in `~/.prism/registries.json`, merge result
 
 ```python
 python3 -c "
-import json, os, time, sys
+import json, os, sys
 import urllib.request, urllib.error
 reg_path = os.path.expanduser('~/.prism/registries.json')
 cache_dir = os.path.expanduser('~/.prism/cache')
@@ -54,47 +54,51 @@ for reg in data.get('registries', []):
     url = reg['url'].rstrip('/')
     token = os.environ.get('REGISTRY_TOKEN', reg.get('token', ''))
     cache_path = os.path.join(cache_dir, f'{name}.json')
-    # Check cache (24h mtime TTL = 86400 seconds)
+    # Load cached data and ETag if available
+    cached = None
+    stored_etag = None
     try:
         if os.path.exists(cache_path):
-            age = time.time() - os.path.getmtime(cache_path)
-            if age < 86400:
-                with open(cache_path) as f:
-                    cached = json.load(f)
-                registry_reached = True
-                for s in cached.get('skills', []):
-                    s['_registry'] = name
-                    all_skills.append(s)
-                continue
+            with open(cache_path) as f:
+                cached = json.load(f)
+            stored_etag = cached.get('_etag')
     except: pass
-    # Fetch fresh
+    # Conditional GET — send If-None-Match if we have a cached ETag
     try:
         headers = {'User-Agent': 'Prism/1.0'}
         if token:
             headers['Authorization'] = f'Bearer {token}'
+        if stored_etag:
+            headers['If-None-Match'] = stored_etag
         req = urllib.request.Request(f'{url}/api/skills/registry', headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            fetched = json.loads(resp.read().decode())
-        os.makedirs(cache_dir, exist_ok=True)
-        tmp = cache_path + '.tmp'
-        with open(tmp, 'w') as f: json.dump(fetched, f)
-        os.rename(tmp, cache_path)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                fetched = json.loads(resp.read().decode())
+                new_etag = resp.headers.get('ETag')
+            if fetched.get('skills'):
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_data = dict(fetched)
+                if new_etag:
+                    cache_data['_etag'] = new_etag
+                tmp = cache_path + '.tmp'
+                with open(tmp, 'w') as f: json.dump(cache_data, f)
+                os.rename(tmp, cache_path)
+        except urllib.error.HTTPError as e:
+            if e.code == 304 and cached is not None:
+                fetched = cached  # 304 Not Modified — use cache
+            else:
+                raise
         registry_reached = True
         for s in fetched.get('skills', []):
             s['_registry'] = name
             all_skills.append(s)
     except Exception as e:
         print(f'Warning: could not reach {name}: {e}', file=sys.stderr)
-        # Try stale cache
-        try:
-            if os.path.exists(cache_path):
-                with open(cache_path) as f:
-                    cached = json.load(f)
-                registry_reached = True
-                for s in cached.get('skills', []):
-                    s['_registry'] = name
-                    all_skills.append(s)
-        except: pass
+        if cached:
+            registry_reached = True
+            for s in cached.get('skills', []):
+                s['_registry'] = name
+                all_skills.append(s)
 if all_skills:
     print(json.dumps(all_skills))
 elif registry_reached:
