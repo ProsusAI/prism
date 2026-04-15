@@ -99,7 +99,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Fix /publish-skills token resolution from registries.json (no env var required)
+- [x] 05-01-PLAN.md — Fix /publish-skills token resolution from registries.json (no env var required)
 - [ ] 05-02-PLAN.md — Project ID cache, env var standardization, install.sh hardening, doc fixes
 
 ## Progress

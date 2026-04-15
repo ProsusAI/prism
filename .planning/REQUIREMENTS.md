@@ -93,7 +93,7 @@
 - [x] **SKILL-07**: `/synthesize` — incident clusters to skills
 - [x] **SKILL-08**: `/synthesize-decisions` — design decisions to skills
 - [x] **SKILL-09**: `/curate-skills` — quality pass: keep / delete / merge / rewrite
-- [ ] **SKILL-10**: `/publish-skills [--registry NAME] [--all]` — publish delta to registry, creates PR
+- [x] **SKILL-10**: `/publish-skills [--registry NAME] [--all]` — publish delta to registry, creates PR
 - [x] **SKILL-11**: `/advise-skills <query>` — search all configured registries for matching skills
 - [x] **SKILL-12**: `/audit-code` — proactive codebase check against all registries
 
@@ -215,7 +215,7 @@
 | SKILL-07 | Phase 3 | Complete |
 | SKILL-08 | Phase 3 | Complete |
 | SKILL-09 | Phase 3 | Complete |
-| SKILL-10 | Phase 5 | Pending |
+| SKILL-10 | Phase 5 | Complete |
 | SKILL-11 | Phase 3 | Complete |
 | SKILL-12 | Phase 3 | Complete |
 | REG-01 | Phase 4 | Complete |
@@ -227,7 +227,7 @@
 | REG-07 | Phase 4 | Complete |
 | REG-08 | Phase 4 | Complete |
 | REG-09 | Phase 4 | Complete |
-| REG-10 | Phase 5 | Pending |
+| REG-10 | Phase 5 | Complete |
 | REG-11 | Phase 4 | Complete |
 | REG-12 | Phase 4 | Complete |
 
