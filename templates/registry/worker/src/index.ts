@@ -43,6 +43,19 @@ function json(data: unknown, status = 200) {
   });
 }
 
+/** Constant-time string comparison to prevent timing side-channel attacks */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Compare against dummy to avoid leaking length info via timing
+    b = a;
+  }
+  let result = a.length ^ b.length; // will be non-zero if lengths differ
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
 /** Verify the client's API token */
 function authenticate(request: Request, env: Env): boolean {
   const authHeader = request.headers.get("Authorization");
@@ -50,7 +63,7 @@ function authenticate(request: Request, env: Env): boolean {
 
   const token = authHeader.replace("Bearer ", "").trim();
   const validTokens = env.REGISTRY_TOKENS.split(",").map((t) => t.trim());
-  return validTokens.includes(token);
+  return validTokens.some((valid) => timingSafeEqual(token, valid));
 }
 
 /** Fetch a raw file from the private GitHub repo */
