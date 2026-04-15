@@ -198,7 +198,7 @@ interface PrismSkillPayload {
 }
 
 interface PrismPublishRequest {
-  repository: string;
+  repository: string;  // derived from skills[0].repository by validatePrismPublish
   skills: PrismSkillPayload[];
   description: string;
 }
