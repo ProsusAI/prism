@@ -15,6 +15,7 @@ from .index import (
     list_entries,
     load_index,
     remove_entry,
+    save_index,
     update_confidence,
 )
 from .project import detect_project_id, detect_project_name
