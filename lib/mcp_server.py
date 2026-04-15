@@ -138,8 +138,14 @@ def _relevant(file_path=None, domain=None, project_id=None, limit=5):
     return entries[:limit]
 
 
+VALID_KINDS = {"preference", "correction", "procedure", "error_recipe", "domain_fact", "tool_pattern"}
+
+
 def _record(text, kind="preference", project_id=None, scope="global"):
     """Record a new entry mid-session (like 'prism learn')."""
+    if kind not in VALID_KINDS:
+        return {"id": "", "status": "error", "message": f"Invalid kind: {kind}"}
+
     if not project_id:
         project_id = os.environ.get("PRISM_PROJECT_ID", "global")
 
