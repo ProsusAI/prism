@@ -183,7 +183,8 @@ def _update_gitignore() -> None:
         with open(gitignore_path, "a") as f:
             if existing_content and not existing_content.endswith("\n"):
                 f.write("\n")
-            f.write("# Prism (auto-generated, machine-specific)\n")
+            if "# Prism (auto-generated, machine-specific)" not in existing_lines:
+                f.write("# Prism (auto-generated, machine-specific)\n")
             for entry in to_add:
                 f.write(entry + "\n")
 
