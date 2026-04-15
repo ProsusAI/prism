@@ -90,16 +90,18 @@ def add_registry(name: str, url: str, token: str = "", writable: bool = True) ->
     or name format is invalid. Sets as default if no default exists yet.
     """
     # Validate name format (T-04-02: prevent injection)
-    if not name or (len(name) > 1 and not _NAME_RE.match(name)):
-        # Allow single-char names like 'a' as special case
-        if len(name) == 1 and not name.isalnum():
+    if not name:
+        raise ValueError("Registry name is required.")
+    # Allow single-char alphanumeric names; require kebab-case for multi-char
+    if len(name) == 1:
+        if not name.isalnum():
             raise ValueError(
-                f"Invalid registry name '{name}'. Use kebab-case: [a-z0-9][a-z0-9-]*[a-z0-9]"
+                f"Invalid registry name '{name}'. Must be alphanumeric."
             )
-        if len(name) > 1 and not _NAME_RE.match(name):
-            raise ValueError(
-                f"Invalid registry name '{name}'. Use kebab-case: [a-z0-9][a-z0-9-]*[a-z0-9]"
-            )
+    elif not _NAME_RE.match(name):
+        raise ValueError(
+            f"Invalid registry name '{name}'. Use kebab-case: [a-z0-9][a-z0-9-]*[a-z0-9]"
+        )
 
     data = load_registries()
 
