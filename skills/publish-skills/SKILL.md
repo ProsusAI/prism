@@ -75,19 +75,17 @@ Handle output:
 - `READ_ONLY:name` -> tell user the registry is read-only, cannot publish
 - `NOT_FOUND:name` -> registry not found in registries.json
 
-If the result is valid JSON, extract `name`, `url`, and `token` fields. For the token, check `REGISTRY_TOKEN` env var first (takes precedence), then use the token from the registry entry:
+If the result is valid JSON, extract the `name`, `url`, and `token` fields from the JSON result. Resolve the final API token:
+1. Check `REGISTRY_TOKEN` environment variable (backward compat, takes precedence)
+2. If not set, use the `token` field from the resolved registry entry
 
-```bash
-echo "${REGISTRY_TOKEN:+set}"
-```
-
-If `REGISTRY_TOKEN` is set, use it. Otherwise use the token from the resolved registry entry. If both are empty, tell the user:
+Store the resolved token for use in Step 4. If both sources are empty, tell the user:
 
 > **No API token found.** Set the `REGISTRY_TOKEN` environment variable or add a token to your registry:
 > ```
-> export REGISTRY_TOKEN="your-api-token"
+> prism registry add NAME --url URL --token YOUR_TOKEN
 > ```
-> Or: `prism registry token create NAME`
+> Or generate one: `prism registry token create NAME`
 
 Then stop.
 
@@ -217,7 +215,7 @@ import json, os, urllib.request, urllib.error
 
 # Configuration (filled from Steps 1-3)
 REGISTRY_URL = ""       # <-- from Step 1
-TOKEN = os.environ["REGISTRY_TOKEN"]
+TOKEN = ""              # <-- resolved token from Step 1 (REGISTRY_TOKEN env var or registry entry token)
 SKILLS_TO_PUBLISH = []  # <-- list of (skill_name, skill_dir) from Step 3
 
 skills_payload = []
@@ -263,7 +261,7 @@ except urllib.error.HTTPError as e:
     body = e.read().decode()
     print(f"HTTP {e.code}: {body}")
     if e.code in (401, 403):
-        print("Registry authentication failed. Check your REGISTRY_TOKEN.")
+        print("Registry authentication failed. Check your token (REGISTRY_TOKEN env var or registry entry).")
 except urllib.error.URLError as e:
     print(f"Connection failed: {e.reason}")
     print(f"Check that registry_url is correct: {REGISTRY_URL}")
@@ -272,7 +270,7 @@ PYEOF
 
 **Important:**
 - The API endpoint is `POST {registry_url}/api/skills/publish`
-- Auth header: `Authorization: Bearer {REGISTRY_TOKEN}`
+- Auth header: `Authorization: Bearer {TOKEN}` (resolved token from Step 1)
 - Include `User-Agent: Prism/1.0` to avoid Cloudflare bot detection
 - The `content` field contains the raw SKILL.md text (not base64 encoded)
 - All skills in a batch should have the same `repository` value
@@ -359,7 +357,7 @@ The delta tracking file at `_analysis/.published.json` has this structure:
 
 - **Worker-only publishing** -- skills are published via the registry Worker API (`POST /api/skills/publish`). There is no GitHub-direct publishing path.
 - **Registry from registries.json** -- the target registry is resolved from `~/.prism/registries.json` (with fallback to legacy `config.json` `registry_url`). Use `--registry NAME` or the default registry.
-- **Auth token resolution** -- checks `REGISTRY_TOKEN` env var first (backward compat), then per-registry token from `registries.json`.
+- **Auth token resolution** -- checks `REGISTRY_TOKEN` env var first (backward compat), then per-registry token from `registries.json`. The resolved token is passed to the publish request directly.
 - **Delta tracking** -- `.published.json` tracks content hashes so only changed skills are republished. This avoids unnecessary API calls and makes publish idempotent.
 - **Atomic writes** -- `.published.json` is written via temp file + rename to prevent corruption.
 
