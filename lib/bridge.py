@@ -322,16 +322,15 @@ def _git_short_hash():
 
 
 def _build_skill_md(skill_name, entry, frontmatter, body):
-    """Build SKILL.md content with YAML frontmatter and engram body."""
+    """Build SKILL.md in extract-skills format: Key Decisions, Anti-patterns, optional Structural Template."""
     trigger = entry.get("trigger", "").strip('"').strip("'")
     kind = entry.get("kind", "preference")
     domain = entry.get("domain", "general")
-    evidence_count = entry.get("evidence_count", 0)
 
     description = _build_description(trigger, body, kind, domain)
 
-    # Build title from trigger
-    title = trigger[:80] if trigger else skill_name.replace("-", " ").title()
+    # Strip Evidence section — engram metadata, not skill content
+    clean_body = _strip_evidence_section(body)
 
     lines = [
         "---",
@@ -339,14 +338,43 @@ def _build_skill_md(skill_name, entry, frontmatter, body):
         'description: "{}"'.format(description.replace('"', '\\"')),
         "---",
         "",
-        "# {}".format(title),
-        "*Learned from {} observations.*".format(evidence_count),
+        "## Key Decisions",
         "",
     ]
 
-    if body:
-        lines.append(body)
-        if not body.endswith("\n"):
-            lines.append("")
+    if clean_body.strip():
+        lines.append(clean_body.strip())
+    else:
+        lines.append("1. {}.".format(trigger[:200] if trigger else skill_name.replace("-", " ")))
+
+    lines += [
+        "",
+        "## Anti-patterns",
+        "",
+        "- **What**: Deviating from this pattern inconsistently.",
+        "  **Why**: Inconsistency creates confusion and increases review overhead.",
+        "  **Symptom**: Code review comments flag the same issue repeatedly.",
+        "",
+    ]
+
+    # Structural Template: only include for procedural/workflow kinds where structure adds value
+    if kind in ("procedure", "tool_pattern", "error_recipe"):
+        lines += [
+            "## Structural Template",
+            "",
+            "```",
+            "# Apply consistently across all relevant files.",
+            "# Enforce via tooling (linter, editor config, CI check) where possible.",
+            "```",
+            "",
+        ]
 
     return "\n".join(lines)
+
+
+def _strip_evidence_section(body):
+    """Remove ## Evidence section and everything after it from engram body."""
+    if not body:
+        return ""
+    parts = re.split(r"\n##\s+Evidence\b.*", body, flags=re.IGNORECASE | re.DOTALL)
+    return parts[0].strip()
