@@ -173,14 +173,15 @@ def _update_gitignore() -> None:
         ".claude/.prism_project_id",
     ]
 
-    existing_lines = set()
+    existing_content = ""
     if gitignore_path.exists():
-        existing_lines = set(gitignore_path.read_text().splitlines())
+        existing_content = gitignore_path.read_text()
+    existing_lines = set(existing_content.splitlines())
 
     to_add = [e for e in entries if e not in existing_lines]
     if to_add:
         with open(gitignore_path, "a") as f:
-            if existing_lines and gitignore_path.read_text() and not gitignore_path.read_text().endswith("\n"):
+            if existing_content and not existing_content.endswith("\n"):
                 f.write("\n")
             f.write("# Prism (auto-generated, machine-specific)\n")
             for entry in to_add:
