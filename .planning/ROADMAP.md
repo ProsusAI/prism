@@ -96,10 +96,11 @@ Plans:
   2. `prism init` writes `.claude/.prism_project_id` cache file and hook/MCP env var names are consistent
   3. `install.sh` excludes test files from `~/.prism/lib/` and config.json heredoc includes all DEFAULT_CONFIG keys
   4. REQUIREMENTS.md checkboxes updated for BRG-01-04, SKILL-01-09; 04-02-SUMMARY.md frontmatter corrected
-**Plans**: 0 plans
+**Plans**: 2 plans
 
 Plans:
-_(none yet)_
+- [ ] 05-01-PLAN.md — Fix /publish-skills token resolution from registries.json (no env var required)
+- [ ] 05-02-PLAN.md — Project ID cache, env var standardization, install.sh hardening, doc fixes
 
 ## Progress
 
@@ -112,4 +113,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Personal Knowledge Loop | 0/5 | Planning complete | - |
 | 3. Bridge + Slash Commands | 0/3 | Planning complete | - |
 | 4. Registry | 0/2 | Not started | - |
-| 5. Integration Fixes + Hardening | 0/0 | Not started | - |
+| 5. Integration Fixes + Hardening | 0/2 | Planning complete | - |
