@@ -16,6 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Personal Knowledge Loop** - Extraction pipeline, engram management, confidence lifecycle, and dual-channel context injection (push + pull)
 - [ ] **Phase 3: Bridge + Slash Commands** - Engram-to-skill promotion and the full suite of 12 Lens slash commands for analysis, curation, and publishing
 - [ ] **Phase 4: Registry** - Registry creation, multi-registry management, template bundling, and cross-registry queries
+- [ ] **Phase 5: Integration Fixes + Hardening** - Fix publish-skills token bug, project ID cache, install.sh cleanups, stale doc updates (gap closure)
 
 ## Phase Details
 
@@ -85,10 +86,25 @@ Plans:
 - [x] 04-02-PLAN.md — Registry template bundle: Cloudflare Worker, CI workflows, scripts, schema, install.sh update
 - [x] 04-03-PLAN.md — Multi-registry reads/writes: fetch+cache+merge, create wizard, slash command updates
 
+### Phase 5: Integration Fixes + Hardening
+**Goal**: Fix integration bugs found during milestone audit (publish-skills token resolution, project ID cache, install.sh cleanups) and update stale documentation
+**Depends on**: Phase 4
+**Requirements**: SKILL-10, REG-10, OBS-05, SETUP-01, SETUP-03
+**Gap Closure**: Closes gaps from v1.0 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. `/publish-skills` works with per-registry tokens from registries.json (no REGISTRY_TOKEN env var required)
+  2. `prism init` writes `.claude/.prism_project_id` cache file and hook/MCP env var names are consistent
+  3. `install.sh` excludes test files from `~/.prism/lib/` and config.json heredoc includes all DEFAULT_CONFIG keys
+  4. REQUIREMENTS.md checkboxes updated for BRG-01-04, SKILL-01-09; 04-02-SUMMARY.md frontmatter corrected
+**Plans**: 0 plans
+
+Plans:
+_(none yet)_
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -96,3 +112,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | 2. Personal Knowledge Loop | 0/5 | Planning complete | - |
 | 3. Bridge + Slash Commands | 0/3 | Planning complete | - |
 | 4. Registry | 0/2 | Not started | - |
+| 5. Integration Fixes + Hardening | 0/0 | Not started | - |

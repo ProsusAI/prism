@@ -77,23 +77,23 @@
 
 ### Bridge (Engram to Skill)
 
-- [ ] **BRG-01**: `prism promote <id>` checks gates: confidence >= 0.7, evidence >= 3, source != "registry"
-- [ ] **BRG-02**: Promotion converts engram markdown to `plugin.json` + `SKILL.md` format
-- [ ] **BRG-03**: Promoted skills written to `_analysis/extracted_skills_codebase/<name>/`
-- [ ] **BRG-04**: Promotion is local-only (no network needed, works without registry)
+- [x] **BRG-01**: `prism promote <id>` checks gates: confidence >= 0.7, evidence >= 3, source != "registry"
+- [x] **BRG-02**: Promotion converts engram markdown to `plugin.json` + `SKILL.md` format
+- [x] **BRG-03**: Promoted skills written to `_analysis/extracted_skills_codebase/<name>/`
+- [x] **BRG-04**: Promotion is local-only (no network needed, works without registry)
 
 ### Slash Commands
 
-- [ ] **SKILL-01**: `/run-analysis-pipeline` — guided full codebase analysis (agentic or general)
-- [ ] **SKILL-02**: `/run-history-pipeline` — git history to failure pattern skills
-- [ ] **SKILL-03**: `/analyze-agent-codebase` — deep 6-cluster agentic analysis
-- [ ] **SKILL-04**: `/extract-skills` — analysis report to skills
-- [ ] **SKILL-05**: `/mine-history` — mine git log for incidents and decisions
-- [ ] **SKILL-06**: `/mine-design` — extract design decisions from current source
-- [ ] **SKILL-07**: `/synthesize` — incident clusters to skills
-- [ ] **SKILL-08**: `/synthesize-decisions` — design decisions to skills
-- [ ] **SKILL-09**: `/curate-skills` — quality pass: keep / delete / merge / rewrite
-- [x] **SKILL-10**: `/publish-skills [--registry NAME] [--all]` — publish delta to registry, creates PR
+- [x] **SKILL-01**: `/run-analysis-pipeline` — guided full codebase analysis (agentic or general)
+- [x] **SKILL-02**: `/run-history-pipeline` — git history to failure pattern skills
+- [x] **SKILL-03**: `/analyze-agent-codebase` — deep 6-cluster agentic analysis
+- [x] **SKILL-04**: `/extract-skills` — analysis report to skills
+- [x] **SKILL-05**: `/mine-history` — mine git log for incidents and decisions
+- [x] **SKILL-06**: `/mine-design` — extract design decisions from current source
+- [x] **SKILL-07**: `/synthesize` — incident clusters to skills
+- [x] **SKILL-08**: `/synthesize-decisions` — design decisions to skills
+- [x] **SKILL-09**: `/curate-skills` — quality pass: keep / delete / merge / rewrite
+- [ ] **SKILL-10**: `/publish-skills [--registry NAME] [--all]` — publish delta to registry, creates PR
 - [x] **SKILL-11**: `/advise-skills <query>` — search all configured registries for matching skills
 - [x] **SKILL-12**: `/audit-code` — proactive codebase check against all registries
 
@@ -202,20 +202,20 @@
 | CTX-07 | Phase 2 | Complete |
 | CTX-08 | Phase 2 | Complete |
 | CTX-09 | Phase 2 | Complete |
-| BRG-01 | Phase 3 | Pending |
-| BRG-02 | Phase 3 | Pending |
-| BRG-03 | Phase 3 | Pending |
-| BRG-04 | Phase 3 | Pending |
-| SKILL-01 | Phase 3 | Pending |
-| SKILL-02 | Phase 3 | Pending |
-| SKILL-03 | Phase 3 | Pending |
-| SKILL-04 | Phase 3 | Pending |
-| SKILL-05 | Phase 3 | Pending |
-| SKILL-06 | Phase 3 | Pending |
-| SKILL-07 | Phase 3 | Pending |
-| SKILL-08 | Phase 3 | Pending |
-| SKILL-09 | Phase 3 | Pending |
-| SKILL-10 | Phase 3 | Complete |
+| BRG-01 | Phase 3 | Complete |
+| BRG-02 | Phase 3 | Complete |
+| BRG-03 | Phase 3 | Complete |
+| BRG-04 | Phase 3 | Complete |
+| SKILL-01 | Phase 3 | Complete |
+| SKILL-02 | Phase 3 | Complete |
+| SKILL-03 | Phase 3 | Complete |
+| SKILL-04 | Phase 3 | Complete |
+| SKILL-05 | Phase 3 | Complete |
+| SKILL-06 | Phase 3 | Complete |
+| SKILL-07 | Phase 3 | Complete |
+| SKILL-08 | Phase 3 | Complete |
+| SKILL-09 | Phase 3 | Complete |
+| SKILL-10 | Phase 5 | Pending |
 | SKILL-11 | Phase 3 | Complete |
 | SKILL-12 | Phase 3 | Complete |
 | REG-01 | Phase 4 | Complete |
@@ -227,7 +227,7 @@
 | REG-07 | Phase 4 | Complete |
 | REG-08 | Phase 4 | Complete |
 | REG-09 | Phase 4 | Complete |
-| REG-10 | Phase 4 | Complete |
+| REG-10 | Phase 5 | Pending |
 | REG-11 | Phase 4 | Complete |
 | REG-12 | Phase 4 | Complete |
 
@@ -238,4 +238,4 @@
 
 ---
 *Requirements defined: 2026-04-14*
-*Last updated: 2026-04-14 after roadmap creation (traceability updated)*
+*Last updated: 2026-04-15 after milestone audit gap closure planning*
