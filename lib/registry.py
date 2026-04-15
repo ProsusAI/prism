@@ -412,12 +412,12 @@ def cmd_registry_create() -> None:
      cp ci/*.yml .github/workflows/
 
   3. Install and deploy the Worker:
-     cd worker && npm install && wrangler deploy
+     cd worker && npm install && npm run deploy
 
   4. Set Worker secrets:
-     wrangler secret put GH_TOKEN
+     npx wrangler secret put GH_TOKEN
      (paste your GitHub Personal Access Token)
-     wrangler secret put REGISTRY_TOKENS
+     npx wrangler secret put REGISTRY_TOKENS
      (paste: {generated_token})
 
   5. Update wrangler.toml:

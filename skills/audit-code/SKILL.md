@@ -48,6 +48,7 @@ if not data.get('registries'):
             data = {'registries': [{'name': 'default', 'url': url, 'token': ''}]}
     except: pass
 all_skills = []
+registry_reached = False
 for reg in data.get('registries', []):
     name = reg['name']
     url = reg['url'].rstrip('/')
@@ -60,6 +61,7 @@ for reg in data.get('registries', []):
             if age < 86400:
                 with open(cache_path) as f:
                     cached = json.load(f)
+                registry_reached = True
                 for s in cached.get('skills', []):
                     s['_registry'] = name
                     all_skills.append(s)
@@ -77,6 +79,7 @@ for reg in data.get('registries', []):
         tmp = cache_path + '.tmp'
         with open(tmp, 'w') as f: json.dump(fetched, f)
         os.rename(tmp, cache_path)
+        registry_reached = True
         for s in fetched.get('skills', []):
             s['_registry'] = name
             all_skills.append(s)
@@ -87,12 +90,15 @@ for reg in data.get('registries', []):
             if os.path.exists(cache_path):
                 with open(cache_path) as f:
                     cached = json.load(f)
+                registry_reached = True
                 for s in cached.get('skills', []):
                     s['_registry'] = name
                     all_skills.append(s)
         except: pass
 if all_skills:
     print(json.dumps(all_skills))
+elif registry_reached:
+    print('REGISTRY_EMPTY')
 else:
     print('NO_REGISTRIES')
 "
@@ -100,7 +106,9 @@ else:
 
 If the result is valid JSON (an array of skills), use it as the skills list. Each skill has a `_registry` field indicating its source.
 
-If the result is `NO_REGISTRIES`, proceed to fallback sources.
+If the result is `REGISTRY_EMPTY`, the registry was reached but has no skills yet. Skip fallback sources and go directly to Step 2.
+
+If the result is `NO_REGISTRIES`, no registry was configured or reachable. Proceed to fallback sources.
 
 **1b. Local skill-registry.json (fallback):**
 

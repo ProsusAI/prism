@@ -1,6 +1,6 @@
 ---
 name: publish-skills
-description: Publish changed skills from _analysis/extracted_skills_codebase/ to the Prism registry via the Worker API with delta tracking. Only publishes skills whose content has changed since last publish unless --all is specified.
+description: Publish changed skills from _analysis/extracted_skills_codebase/ and _analysis/extracted_skills_history/ to the Prism registry via the Worker API with delta tracking. Only publishes skills whose content has changed since last publish unless --all is specified.
 ---
 
 ## When to use this skill
@@ -9,7 +9,7 @@ Use when the user wants to publish extracted or promoted skills to a Prism skill
 
 ## Prerequisites
 
-- Skills must exist in `_analysis/extracted_skills_codebase/` (created by `/extract-skills` or `prism promote`)
+- Skills must exist in `_analysis/extracted_skills_codebase/` (created by `/extract-skills` or `prism promote`) and/or `_analysis/extracted_skills_history/` (created by `/run-history-pipeline`)
 - Each skill directory must contain both `plugin.json` and `SKILL.md`
 - A registry must be configured in `~/.prism/registries.json` (or legacy `~/.prism/config.json`)
 - The `REGISTRY_TOKEN` environment variable or per-registry token in `registries.json` must be available
@@ -91,16 +91,19 @@ Then stop.
 
 ### Step 2 -- Discover valid skills
 
-Scan `_analysis/extracted_skills_codebase/` for skill directories. Each valid skill directory must contain both `plugin.json` and `SKILL.md`.
+Scan both `_analysis/extracted_skills_codebase/` (from `/extract-skills` and `prism promote`) and `_analysis/extracted_skills_history/` (from `/run-history-pipeline`) for skill directories. Each valid skill directory must contain both `plugin.json` and `SKILL.md`.
 
 ```bash
-for dir in _analysis/extracted_skills_codebase/*/; do
-    [ -d "$dir" ] || continue
-    if [ -f "$dir/plugin.json" ] && [ -f "$dir/SKILL.md" ]; then
-        echo "VALID: $(basename "$dir")"
-    else
-        echo "SKIP (missing files): $(basename "$dir")"
-    fi
+for base_dir in _analysis/extracted_skills_codebase _analysis/extracted_skills_history; do
+    [ -d "$base_dir" ] || continue
+    for dir in "$base_dir"/*/; do
+        [ -d "$dir" ] || continue
+        if [ -f "$dir/plugin.json" ] && [ -f "$dir/SKILL.md" ]; then
+            echo "VALID: $dir"
+        else
+            echo "SKIP (missing files): $dir"
+        fi
+    done
 done
 ```
 
@@ -111,38 +114,49 @@ python3 << 'PYEOF'
 import json, os, sys
 
 required_fields = ["name", "description", "author", "repository", "category", "source", "commit_date", "source_hash"]
-base = "_analysis/extracted_skills_codebase"
+base_dirs = [
+    "_analysis/extracted_skills_codebase",
+    "_analysis/extracted_skills_history",
+]
 
-valid = []
+valid = []   # list of (skill_name, skill_dir)
 invalid = []
+seen_names = set()
 
-for skill_name in sorted(os.listdir(base)):
-    skill_dir = os.path.join(base, skill_name)
-    if not os.path.isdir(skill_dir):
+for base in base_dirs:
+    if not os.path.isdir(base):
         continue
-    plugin_path = os.path.join(skill_dir, "plugin.json")
-    skillmd_path = os.path.join(skill_dir, "SKILL.md")
-    if not (os.path.isfile(plugin_path) and os.path.isfile(skillmd_path)):
-        invalid.append((skill_name, "missing plugin.json or SKILL.md"))
-        continue
-    try:
-        with open(plugin_path) as f:
-            plugin = json.load(f)
-        missing = [fld for fld in required_fields if fld not in plugin]
-        if missing:
-            invalid.append((skill_name, f"missing fields: {', '.join(missing)}"))
-        else:
-            valid.append(skill_name)
-    except (json.JSONDecodeError, OSError) as e:
-        invalid.append((skill_name, str(e)))
+    for skill_name in sorted(os.listdir(base)):
+        skill_dir = os.path.join(base, skill_name)
+        if not os.path.isdir(skill_dir):
+            continue
+        if skill_name in seen_names:
+            print(f"SKIP (duplicate name, keeping first): {skill_dir}")
+            continue
+        plugin_path = os.path.join(skill_dir, "plugin.json")
+        skillmd_path = os.path.join(skill_dir, "SKILL.md")
+        if not (os.path.isfile(plugin_path) and os.path.isfile(skillmd_path)):
+            invalid.append((skill_dir, "missing plugin.json or SKILL.md"))
+            continue
+        try:
+            with open(plugin_path) as f:
+                plugin = json.load(f)
+            missing = [fld for fld in required_fields if fld not in plugin]
+            if missing:
+                invalid.append((skill_dir, f"missing fields: {', '.join(missing)}"))
+            else:
+                valid.append((skill_name, skill_dir))
+                seen_names.add(skill_name)
+        except (json.JSONDecodeError, OSError) as e:
+            invalid.append((skill_dir, str(e)))
 
 print(f"Found {len(valid)} valid skill(s):")
-for name in valid:
-    print(f"  - {name}")
+for name, path in valid:
+    print(f"  - {name} ({path})")
 if invalid:
     print(f"\nSkipped {len(invalid)} invalid skill(s):")
-    for name, reason in invalid:
-        print(f"  - {name}: {reason}")
+    for path, reason in invalid:
+        print(f"  - {path}: {reason}")
 if not valid:
     print("\nNo valid skills to publish.")
     sys.exit(1)
@@ -161,7 +175,6 @@ For each valid skill, compute a content hash: SHA256 of `plugin.json` bytes conc
 python3 << 'PYEOF'
 import hashlib, json, os
 
-base = "_analysis/extracted_skills_codebase"
 published_path = "_analysis/.published.json"
 
 # Load existing published state
@@ -171,11 +184,10 @@ if os.path.isfile(published_path):
 else:
     published = {}
 
-# Compute hashes for all valid skills (list populated from Step 2)
-VALID_SKILLS = []  # <-- fill from Step 2 results
+# Compute hashes for all valid skills (list of (skill_name, skill_dir) from Step 2)
+VALID_SKILLS = []  # <-- fill from Step 2 results as (skill_name, skill_dir) tuples
 
-for skill_name in VALID_SKILLS:
-    skill_dir = os.path.join(base, skill_name)
+for skill_name, skill_dir in VALID_SKILLS:
     h = hashlib.sha256()
     for filename in ["plugin.json", "SKILL.md"]:
         filepath = os.path.join(skill_dir, filename)

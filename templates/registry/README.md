@@ -7,7 +7,7 @@ This directory contains everything needed to deploy a Prism skill registry backe
 - Node.js 22+ (for Wrangler)
 - A Cloudflare account
 - A GitHub account with a Personal Access Token (PAT) with `repo` scope
-- Wrangler CLI: `npm install -g wrangler`
+- Wrangler CLI: installed locally via `npm install` (no global install needed)
 
 ## Setup
 
@@ -43,17 +43,17 @@ GH_BRANCH = "main"
 ```bash
 cd worker
 npm install
-wrangler deploy
+npm run deploy
 ```
 
 ### 4. Set Secrets
 
 ```bash
 # Your GitHub PAT with repo scope
-wrangler secret put GH_TOKEN
+npx wrangler secret put GH_TOKEN
 
 # Comma-separated API tokens for Prism clients
-wrangler secret put REGISTRY_TOKENS
+npx wrangler secret put REGISTRY_TOKENS
 ```
 
 ### 5. Set Up CI
