@@ -53,7 +53,13 @@ chmod +x "$PRISM_HOME/hooks/capture.sh"
 cp "$PRISM_REPO/agents/"*.md "$PRISM_HOME/agents/"
 
 # 4. Copy lib (overwrite on upgrade)
-cp "$PRISM_REPO"/lib/*.py "$PRISM_HOME/lib/"
+for pyfile in "$PRISM_REPO"/lib/*.py; do
+    [ -f "$pyfile" ] || continue
+    case "$(basename "$pyfile")" in
+        test_*) continue ;;  # Exclude test files from install
+    esac
+    cp "$pyfile" "$PRISM_HOME/lib/"
+done
 
 # 4b. Copy slash command skills (overwrite on upgrade)
 if [ -d "$PRISM_REPO/skills" ]; then
@@ -97,6 +103,7 @@ if [ ! -f "$PRISM_HOME/config.json" ]; then
   "decay_rate_per_week": 0.02,
   "archive_threshold": 0.2,
   "publish_min_confidence": 0.7,
+  "publish_min_evidence": 3,
   "max_context_lines": 100,
   "registry_url": ""
 }

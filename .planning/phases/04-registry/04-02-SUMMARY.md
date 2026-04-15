@@ -3,14 +3,18 @@ phase: 04-registry
 plan: 02
 subsystem: registry-template
 tags: [cloudflare-worker, ci, template, registry]
-dependency_graph:
-  requires: []
-  provides: [registry-template, registry-worker, registry-ci, registry-schema]
-  affects: [install.sh, prism-registry-create]
-tech_stack:
+
+requires: []
+provides:
+  - "Registry template: Cloudflare Worker, CI workflows, validation scripts, JSON Schema"
+  - "install.sh copies templates/registry/ and creates cache/ directory"
+affects: [prism-registry-create]
+
+tech-stack:
   added: [wrangler-4.82, cloudflare-workers-types, typescript-5.8]
   patterns: [github-git-api-pr-creation, bearer-token-auth, flat-field-payload-validation]
-key_files:
+
+key-files:
   created:
     - templates/registry/worker/src/index.ts
     - templates/registry/worker/wrangler.toml
@@ -24,16 +28,21 @@ key_files:
     - templates/registry/README.md
   modified:
     - install.sh
-decisions:
-  - Adapted Lens Worker structure with Prism flat-field payload format (not Lens skill_md/plugin_json format)
-  - Added DoS mitigation: MAX_SKILLS_PER_BATCH=50, MAX_CONTENT_LENGTH=500KB per skill
-  - Relaxed plugin.schema.json description pattern (removed TRIGGER requirement) for broader Prism compatibility
-  - Made source_hash optional in schema (not in required array) since Prism may publish without it
-metrics:
-  duration: 3min
-  completed: 2026-04-14
-  tasks: 2
-  files: 11
+
+key-decisions:
+  - "Adapted Lens Worker structure with Prism flat-field payload format (not Lens skill_md/plugin_json format)"
+  - "Added DoS mitigation: MAX_SKILLS_PER_BATCH=50, MAX_CONTENT_LENGTH=500KB per skill"
+  - "Relaxed plugin.schema.json description pattern (removed TRIGGER requirement) for broader Prism compatibility"
+  - "Made source_hash optional in schema (not in required array) since Prism may publish without it"
+
+patterns-established:
+  - "Flat-field publish payload: Worker reconstructs plugin.json from individual fields"
+  - "DoS limits: 50 skills per batch, 500KB per skill content"
+
+requirements-completed: [REG-08]
+
+duration: 3min
+completed: 2026-04-14
 ---
 
 # Phase 4 Plan 2: Registry Template Bundle Summary
