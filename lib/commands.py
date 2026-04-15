@@ -428,8 +428,9 @@ def cmd_maintain() -> None:
     today = date.today()
     decayed = 0
     archived = 0
+    to_archive_ids = set()
 
-    for entry in list(index["engrams"]):
+    for entry in index["engrams"]:
         # Skip pinned entries
         if entry.get("pinned"):
             continue
@@ -451,18 +452,23 @@ def cmd_maintain() -> None:
         new_conf = max(0.0, old_conf - (decay_rate * weeks_since))
 
         if new_conf < archive_threshold:
-            # Archive the entry
+            # Archive the entry file
             source_path = PRISM_HOME / entry.get("path", "")
-            if source_path.exists():
+            if entry.get("path") and source_path.is_file():
                 archive_dir = PRISM_HOME / "archive"
                 archive_dir.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(source_path), str(archive_dir / source_path.name))
-            remove_entry(entry["id"])
+            to_archive_ids.add(entry["id"])
             archived += 1
             print(f"  Archived: {entry['id']} (confidence: {old_conf:.2f} -> {new_conf:.2f})")
         elif new_conf < old_conf:
-            update_confidence(entry["id"], new_conf)
+            entry["confidence"] = round(new_conf, 3)
             decayed += 1
+
+    # Batch index update: remove archived entries and save once
+    if to_archive_ids or decayed > 0:
+        index["engrams"] = [e for e in index["engrams"] if e["id"] not in to_archive_ids]
+        save_index(index)
 
     print(f"Maintenance complete: {decayed} decayed, {archived} archived")
 
