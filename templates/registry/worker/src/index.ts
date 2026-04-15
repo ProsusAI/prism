@@ -229,8 +229,8 @@ function validatePrismPublish(body: any):
 
     if (!s || typeof s !== "object") return { ok: false, error: `${p}must be an object` };
     if (!s.name || typeof s.name !== "string") return { ok: false, error: `${p}missing 'name'` };
-    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(s.name)) {
-      return { ok: false, error: `${p}'${s.name}' must be lowercase alphanumeric with hyphens` };
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(s.name)) {
+      return { ok: false, error: `${p}'${s.name}' must be kebab-case with at least two words (e.g., 'retry-backoff')` };
     }
     if (!s.content || typeof s.content !== "string") return { ok: false, error: `${p}missing 'content'` };
     if (s.content.length < 50) return { ok: false, error: `${p}content too short (min 50 chars)` };
