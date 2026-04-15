@@ -58,16 +58,23 @@ def run_extraction(project_id: str) -> dict:
             return {"extracted": 0, "approved": 0, "rejected": 0, "modified": 0}
 
         # Phase 1: Haiku extracts candidates
-        n_candidates = _phase1_extract(project_id)
-        if n_candidates == 0:
-            return {"extracted": 0, "approved": 0, "rejected": 0, "modified": 0}
+        # Skip if candidates already exist from a previous interrupted run
+        existing_candidates = list(get_candidates_dir(project_id).glob("*.md"))
+        if existing_candidates:
+            print(f"Resuming: {len(existing_candidates)} candidates from previous run, skipping phase 1.")
+            n_candidates = len(existing_candidates)
+        else:
+            n_candidates = _phase1_extract(project_id)
+            if n_candidates == 0:
+                return {"extracted": 0, "approved": 0, "rejected": 0, "modified": 0}
 
         # Phase 2: Sonnet validates candidates
         results = _phase2_validate(project_id)
         results["extracted"] = n_candidates
 
-        # Apply results
-        _apply_validation_results(project_id, results)
+        # Only rotate observations if phase 2 produced a meaningful result
+        phase2_ran = results.get("approved", 0) + results.get("rejected", 0) + results.get("modified", 0) > 0
+        _apply_validation_results(project_id, results, rotate=phase2_ran or not existing_candidates)
 
         # Post-extraction: sync .claude/prism.md with new engrams (EXT-05, CTX-04)
         try:
@@ -119,7 +126,7 @@ The project ID is: {project_id}
         result = subprocess.run(
             ["claude", "--print", "--model", "haiku", "-p", prompt,
              "--allowedTools", "Read,Write,Glob,Grep"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=300,
             cwd=str(PRISM_HOME),
         )
         if result.returncode != 0:
@@ -181,7 +188,7 @@ After outputting decisions:
         result = subprocess.run(
             ["claude", "--print", "--model", "sonnet", "-p", prompt,
              "--allowedTools", "Read,Write,Edit,Glob,Grep,Bash"],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, text=True, timeout=300,
             cwd=str(PRISM_HOME),
         )
         if result.returncode != 0:
@@ -191,7 +198,7 @@ After outputting decisions:
         print("Error: 'claude' CLI not found.")
         return {"approved": 0, "rejected": 0, "modified": 0}
     except subprocess.TimeoutExpired:
-        print("Validation timed out (180s limit).")
+        print("Validation timed out (300s limit).")
         return {"approved": 0, "rejected": 0, "modified": 0}
 
     # Parse validation results from output
@@ -235,7 +242,7 @@ def _parse_validation_output(output: str, project_id: str) -> dict:
     return results
 
 
-def _apply_validation_results(project_id: str, results: dict) -> None:
+def _apply_validation_results(project_id: str, results: dict, rotate: bool = True) -> None:
     """Update the index based on validation results."""
     engrams_dir = get_engrams_dir(project_id)
 
@@ -250,8 +257,9 @@ def _apply_validation_results(project_id: str, results: dict) -> None:
         for deprecated_id in decision.get("deprecates", []):
             remove_entry(deprecated_id)
 
-    # Rotate observations after successful extraction
-    _rotate_observations(project_id)
+    # Only rotate observations if phase 2 completed successfully
+    if rotate:
+        _rotate_observations(project_id)
 
 
 def _parse_frontmatter(filepath: Path, project_id: str) -> "dict | None":

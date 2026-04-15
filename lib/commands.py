@@ -72,7 +72,7 @@ def cmd_init() -> None:
     # Print concise summary (D-06, D-11)
     print(f"\n\033[32mPrism initialized for {project_name} ({project_id})\033[0m")
     print()
-    print(f"  Hooks:   .claude/settings.local.json (PreToolUse + PostToolUse)")
+    print(f"  Hooks:   .claude/settings.local.json (PreToolUse only)")
     print(f"  MCP:     prism knowledge server registered")
     print(f"  Context: .claude/prism.md generated")
     if skills_count > 0:
@@ -102,9 +102,8 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     hooks = existing.get("hooks", {})
     capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
 
-    for event, phase_arg, is_async in [
-        ("PreToolUse", "pre", False),
-        ("PostToolUse", "post", True),
+    for event, phase_arg in [
+        ("PreToolUse", "pre"),
     ]:
         hook_entry = {
             "matcher": "*",
@@ -113,8 +112,6 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
                 "command": "{} {}".format(capture_cmd, phase_arg),
             }],
         }
-        if is_async:
-            hook_entry["hooks"][0]["async"] = True
 
         if event not in hooks:
             hooks[event] = [hook_entry]
