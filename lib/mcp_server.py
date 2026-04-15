@@ -84,7 +84,11 @@ def _get_entry_content(entry_id):
     if not entry:
         return None
 
-    filepath = PRISM_HOME / entry["path"]
+    filepath = (PRISM_HOME / entry["path"]).resolve()
+    # Guard: ensure resolved path is under PRISM_HOME (prevent path traversal)
+    if not str(filepath).startswith(str(PRISM_HOME.resolve())):
+        return None
+
     if not filepath.exists():
         return None
 
