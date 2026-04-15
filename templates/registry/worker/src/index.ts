@@ -61,7 +61,8 @@ function authenticate(request: Request, env: Env): boolean {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader) return false;
 
-  const token = authHeader.replace("Bearer ", "").trim();
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return false;
   const validTokens = env.REGISTRY_TOKENS.split(",").map((t) => t.trim());
   return validTokens.some((valid) => timingSafeEqual(token, valid));
 }
