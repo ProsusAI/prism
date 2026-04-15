@@ -235,7 +235,8 @@ def cmd_status(project_id: Optional[str] = None) -> None:
     print()
     obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
     if obs_path.exists():
-        obs_count = sum(1 for _ in open(obs_path))
+        with open(obs_path) as f:
+            obs_count = sum(1 for _ in f)
         config = get_config()
         threshold = config.get("extract_threshold", 15)
         print(f"  Observations: {obs_count} pending (extract at {threshold})")
