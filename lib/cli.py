@@ -71,10 +71,13 @@ def main() -> None:
     # analyze-sessions
     p_sessions = subparsers.add_parser("analyze-sessions",
                                        help="Analyze existing Claude Code sessions")
+    p_sessions.add_argument("query", nargs="?", default=None,
+                            help="Search session content via SQLite FTS5 (0 tokens). "
+                                 "Combine with --last/--since/--all. Not compatible with --extract")
     p_sessions.add_argument("--all", action="store_true", dest="all_projects",
                             help="Analyze all projects (not just current)")
     p_sessions.add_argument("--extract", action="store_true",
-                            help="Run extraction after analysis")
+                            help="Run extraction after analysis (ignored when query is set)")
     p_sessions.add_argument("--dry-run", action="store_true", dest="dry_run",
                             help="Show what would be analyzed without writing")
     p_sessions.add_argument("--list", action="store_true", dest="list_sessions",
@@ -227,6 +230,37 @@ def main() -> None:
             pass  # Never let the safety net break a command
 
 
+def _cmd_query_sessions(args, project_id: str) -> None:
+    """Search session content via SQLite FTS5."""
+    from .sessions import list_sessions
+    from .search import search_sessions
+
+    sessions = list_sessions(
+        project_filter=None if args.all_projects else project_id,
+        since_date=args.since,
+        last_n=args.last,
+    )
+
+    if not sessions:
+        print("No sessions found for this project.")
+        return
+
+    n = len(sessions)
+    scope = f"last {n}" if args.last else str(n)
+    print(f"Searching {scope} sessions for: {args.query!r}\n")
+
+    results = search_sessions(sessions, args.query, project_id)
+
+    if not results:
+        print("No matches found.")
+        return
+
+    for i, r in enumerate(results, 1):
+        name = os.path.basename(r["cwd"].rstrip("/")) if r["cwd"] else r["session_id"][:8]
+        print(f"{i}. {r['date']}  {name}  ({r['session_id'][:8]}...)")
+        print(f"   {r['snippet']}\n")
+
+
 def _cmd_analyze_sessions(args) -> None:
     """Analyze existing Claude Code session transcripts."""
     from .sessions import list_sessions, analyze_all_sessions
@@ -235,6 +269,10 @@ def _cmd_analyze_sessions(args) -> None:
     if not project_id and not args.all_projects:
         from .project import detect_project_id
         project_id = detect_project_id()
+
+    if args.query:
+        _cmd_query_sessions(args, project_id)
+        return
 
     if args.list_sessions:
         sessions = list_sessions(

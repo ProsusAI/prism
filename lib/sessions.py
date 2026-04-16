@@ -168,6 +168,9 @@ def list_sessions(
         except ValueError:
             pass  # Invalid date format, skip filter
 
+    # Sort by mtime ascending so --last N yields the N most recently modified sessions
+    sessions.sort(key=lambda s: os.path.getmtime(s["path"]))
+
     # Limit to last N if --last provided
     if last_n is not None and last_n > 0:
         sessions = sessions[-last_n:]

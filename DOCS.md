@@ -294,6 +294,7 @@ prism analyze-sessions --last 10        # Analyze last 10 sessions
 prism analyze-sessions --since 2026-04-01  # Analyze sessions since date
 prism analyze-sessions --all --extract  # Analyze all and run extraction
 prism analyze-sessions --list           # Just list available sessions
+prism analyze-sessions "query"          # Search session content (SQLite FTS5, 0 tokens). Combine with --last, --since, --all. NOT compatible with --extract
 ```
 
 This scans existing Claude Code session transcripts and creates observations from them, which can then be extracted into engrams.
