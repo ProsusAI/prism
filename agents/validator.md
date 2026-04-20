@@ -9,7 +9,7 @@ You will be given:
 
 ## Validation Gates
 
-For each candidate, evaluate ALL 4 gates. ALL must pass for approval.
+For each candidate, evaluate ALL 5 gates. ALL must pass for approval.
 
 ### Gate 1: Constitution
 
@@ -33,6 +33,7 @@ Is the evidence sufficient and credible?
 
 Requirements:
 - Preferences/patterns: minimum 3 observations
+- Solutions: minimum 1 — difficulty of discovery counts as evidence
 - Error recipes: minimum 2 occurrences
 - Procedures: minimum 2 sessions showing the same sequence
 - Corrections: minimum 1 clear user correction
@@ -70,6 +71,26 @@ Check for:
 
 **FAIL** if any dangerous pattern is detected.
 
+### Gate 5: Novelty
+
+Would a competent engineer working in this stack already know this?
+
+Ask:
+- Is this derivable from the tool's documentation or common conventions?
+- Is this a generic best practice (run tests, check logs, use version control)?
+- Could this entry appear unchanged in any project's README or onboarding doc?
+
+If yes to any of these → **FAIL**.
+
+What passes:
+- Solutions that required multiple failed attempts to discover
+- User preferences that deviate from common defaults
+- Domain facts specific to this codebase or team
+- Error recipes for non-obvious failures tied to specific versions, configs, or architectures
+- Corrections where the user overrode Claude's default behavior
+
+**FAIL** if the entry contains no knowledge that couldn't be inferred from first principles or standard documentation.
+
 ## Output
 
 For each candidate, output your decision as a JSON object:
@@ -82,7 +103,8 @@ For each candidate, output your decision as a JSON object:
     "constitution": {"passed": true|false, "reason": "...if failed"},
     "evidence": {"passed": true|false, "reason": "...if failed", "observation_count": N},
     "contradiction": {"passed": true|false, "reason": "...if failed", "checked_against": ["existing-ids"]},
-    "safety": {"passed": true|false, "reason": "...if failed"}
+    "safety": {"passed": true|false, "reason": "...if failed"},
+    "novelty": {"passed": true|false, "reason": "...if failed"}
   },
   "modifications": "...if MODIFIED, what was changed",
   "deprecates": ["existing-ids-to-deprecate"]
