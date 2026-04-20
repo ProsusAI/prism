@@ -11,6 +11,8 @@
 | `prism extract [--project ID]` | Run extraction pipeline on observations (Haiku proposes, Sonnet validates) |
 | `prism analyze-sessions [flags]` | Bootstrap observations from existing Claude Code session transcripts |
 | `prism review --session ID [--project ID]` | Analyze a single session transcript for conversational insights |
+| `prism unlock` | Force-clear a stuck extraction lock (use if `prism extract` says "already in progress" after a crash) |
+| `prism reset [--yes] [--project ID]` | Delete all project data (engrams, observations, candidates) and start fresh |
 | `prism maintain` | Run confidence decay cycle; archive engrams below threshold |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format (requires confidence ≥ 0.7, evidence ≥ 3) |
 | `prism log [--last N] [--extractions] [--insights] [--json]` | Show recent observations or extraction history |

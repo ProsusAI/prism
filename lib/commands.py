@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -477,6 +478,73 @@ def cmd_maintain() -> None:
         project_id = detect_project_id()
         sync_claude_code(project_id)
 
+
+
+def cmd_unlock() -> None:
+    """Force-clear a stuck extraction lock."""
+    lock = PRISM_HOME / ".extracting"
+    if not lock.exists():
+        print("No extraction lock found — nothing to clear.")
+        return
+    age = int(time.time() - lock.stat().st_mtime)
+    lock.unlink(missing_ok=True)
+    print(f"Lock cleared (was {age}s old). You can now run 'prism extract'.")
+
+
+def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:
+    """Delete all prism data for the current project and start fresh."""
+    if not project_id:
+        project_id = detect_project_id()
+    project_name = detect_project_name()
+
+    project_dir = PRISM_HOME / "projects" / project_id
+    prism_md = Path.cwd() / ".claude" / "prism.md"
+
+    print(f"This will delete all Prism data for {project_name} ({project_id}):")
+    print(f"  {project_dir}/  (engrams, observations, candidates, archive)")
+    print(f"  {prism_md}  (context file)")
+    print(f"  Session tracker entries for this project")
+
+    if not yes:
+        confirm = input("\nType 'yes' to confirm: ").strip().lower()
+        if confirm != "yes":
+            print("Aborted.")
+            return
+
+    # Clear extraction lock if held (reset makes it stale)
+    lock = PRISM_HOME / ".extracting"
+    lock.unlink(missing_ok=True)
+
+    # Remove project data dir
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+
+    # Remove context file
+    if prism_md.exists():
+        prism_md.unlink()
+
+    # Remove from index
+    index = load_index()
+    index["engrams"] = [e for e in index["engrams"] if e.get("project_id") != project_id]
+    save_index(index)
+
+    # Remove from session tracker
+    tracker_path = PRISM_HOME / "analyzed-sessions.json"
+    if tracker_path.exists():
+        try:
+            with open(tracker_path) as f:
+                tracker = json.load(f)
+            tracker["sessions"] = {
+                sid: entry for sid, entry in tracker.get("sessions", {}).items()
+                if entry.get("project_id") != project_id
+            }
+            with open(tracker_path, "w") as f:
+                json.dump(tracker, f, indent=2)
+                f.write("\n")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    print(f"\nReset complete. Run 'prism init' then 'prism analyze-sessions' to start fresh.")
 
 
 def cmd_config(key=None, value=None) -> None:

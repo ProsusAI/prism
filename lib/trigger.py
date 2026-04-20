@@ -46,17 +46,19 @@ def maybe_trigger_extraction(project_id: str, quiet: bool = False) -> bool:
     if not prism_cli:
         return False
 
-    # Spawn extraction in background
+    # Spawn extraction in background, logging output to ~/.prism/extraction.log
+    log_path = PRISM_HOME / "extraction.log"
     try:
-        devnull = open(os.devnull, "w")
+        log_file = open(log_path, "a")
         subprocess.Popen(
             [sys.executable, prism_cli, "extract", "--project", project_id],
-            stdout=devnull,
-            stderr=devnull,
+            stdout=log_file,
+            stderr=log_file,
             start_new_session=True,
         )
         if not quiet:
             print(f"Auto-extraction triggered ({obs_count} observations). Running in background...")
+            print(f"  (output logged to {log_path})")
         return True
     except OSError:
         return False

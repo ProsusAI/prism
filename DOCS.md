@@ -409,6 +409,8 @@ Writes a new engram immediately and auto-syncs `.claude/prism.md`.
 | `prism extract [--project ID]` | Run extraction pipeline on observations |
 | `prism review --session ID [--project ID]` | Analyze a session transcript |
 | `prism analyze-sessions [flags]` | Bootstrap from existing Claude Code sessions |
+| `prism unlock` | Force-clear a stuck extraction lock |
+| `prism reset [--yes] [--project ID]` | Delete all project data (engrams, observations, candidates) and start fresh |
 | `prism maintain` | Run confidence decay and archive expired engrams |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format |
 | `prism log [--last N] [--extractions] [--insights] [--json]` | Show recent observations |

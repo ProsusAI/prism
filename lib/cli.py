@@ -43,6 +43,14 @@ def main() -> None:
     p_correct.add_argument("id", help="Entry ID to correct")
     p_correct.add_argument("text", help="The corrected knowledge")
 
+    # unlock
+    subparsers.add_parser("unlock", help="Force-clear a stuck extraction lock")
+
+    # reset
+    p_reset = subparsers.add_parser("reset", help="Delete all project data and start fresh")
+    p_reset.add_argument("--project", help="Override project ID")
+    p_reset.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
+
     # maintain
     subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
 
@@ -174,6 +182,14 @@ def main() -> None:
     elif args.command == "correct":
         from .commands import cmd_correct
         cmd_correct(args.id, args.text)
+
+    elif args.command == "unlock":
+        from .commands import cmd_unlock
+        cmd_unlock()
+
+    elif args.command == "reset":
+        from .commands import cmd_reset
+        cmd_reset(project_id=args.project, yes=args.yes)
 
     elif args.command == "maintain":
         from .commands import cmd_maintain
