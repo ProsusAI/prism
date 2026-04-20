@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prism capture hook for Claude Code
-# Registered as PreToolUse and PostToolUse hook in .claude/settings.local.json
+# Registered as PreToolUse hook in .claude/settings.local.json
 #
 # Receives JSON on stdin from Claude Code.
 # Pipes directly to a single Python process (D-08, D-09).

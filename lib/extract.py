@@ -165,6 +165,7 @@ def _phase2_validate(project_id: str) -> dict:
 
     # Build the prompt for Sonnet
     candidate_list = "\n".join(f"  - {c.name}" for c in candidates)
+    n_candidates = len(candidates)
     prompt = f"""Read the validator instructions at {validator_prompt_path}.
 
 Read the constitution at {constitution_path}.
@@ -175,10 +176,17 @@ Review each candidate file in {candidates_dir}/:
 
 For each candidate, evaluate all 4 gates and output your decisions.
 
-IMPORTANT: Output your decisions as a JSON array wrapped in ```json fences.
-Each element should have: candidate_id, decision, gates, modifications (if any), deprecates (if any).
+CRITICAL: You MUST output a decision for ALL {n_candidates} candidates in a single JSON array.
+Every candidate — whether APPROVED, REJECTED, or MODIFIED — must appear in the array.
+A candidate with no decision is a bug. The array must have exactly {n_candidates} elements.
 
-After outputting decisions:
+Output your decisions as a JSON array wrapped in ```json fences:
+[
+  {{"candidate_id": "...", "decision": "APPROVED|REJECTED|MODIFIED", "gates": {{...}}, "modifications": "...", "deprecates": []}},
+  ...
+]
+
+After outputting the JSON array:
 - For APPROVED candidates: move them from {candidates_dir}/ to the entries directory
 - For REJECTED candidates: delete them from {candidates_dir}/
 - For MODIFIED candidates: apply modifications then move to the entries directory
@@ -256,6 +264,24 @@ def _apply_validation_results(project_id: str, results: dict, rotate: bool = Tru
     for decision in results.get("decisions", []):
         for deprecated_id in decision.get("deprecates", []):
             remove_entry(deprecated_id)
+
+    # Clean up any candidates Sonnet left behind (not moved or deleted).
+    # These are orphans — the validator didn't mention them in its JSON output.
+    # Treat as implicitly rejected so they don't accumulate across runs.
+    candidates_dir = get_candidates_dir(project_id)
+    orphans = list(candidates_dir.glob("*.md"))
+    if orphans:
+        decided_ids = {d.get("candidate_id") for d in results.get("decisions", [])}
+        for orphan in orphans:
+            if orphan.stem not in decided_ids:
+                results["rejected"] = results.get("rejected", 0) + 1
+                orphan.unlink(missing_ok=True)
+        remaining = list(candidates_dir.glob("*.md"))
+        if remaining:
+            # Sonnet moved approved/modified ones but forgot to delete rejected — clean up
+            for leftover in remaining:
+                results["rejected"] = results.get("rejected", 0) + 1
+                leftover.unlink(missing_ok=True)
 
     # Only rotate observations if phase 2 completed successfully
     if rotate:

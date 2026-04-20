@@ -354,6 +354,7 @@ def analyze_all_sessions(
     dry_run: bool = False,
     since_date: "str | None" = None,
     last_n: "int | None" = None,
+    force: bool = False,
 ) -> dict:
     """Analyze sessions and write observations.
 
@@ -385,7 +386,7 @@ def analyze_all_sessions(
         file_size = sess["size"]
         pid = sess["project_id"]
 
-        if not _should_analyze(session_id, file_size, tracker):
+        if not force and not _should_analyze(session_id, file_size, tracker):
             skipped += 1
             continue
 

@@ -28,6 +28,7 @@
 | `--extract` | Run extraction immediately after analysis |
 | `--list` | List available sessions with counts |
 | `--dry-run` | Show what would be analyzed without writing observations |
+| `--force` | Re-analyze sessions even if already processed (resets tracker for matched sessions) |
 
 ### `prism registry` subcommands
 

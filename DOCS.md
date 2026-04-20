@@ -288,6 +288,7 @@ prism analyze-sessions --since 2026-04-01  # Analyze sessions since date
 prism analyze-sessions --all --extract  # Analyze all and run extraction
 prism analyze-sessions --list           # Just list available sessions
 prism analyze-sessions "query"          # Search session content (SQLite FTS5, 0 tokens). Combine with --last, --since, --all. NOT compatible with --extract
+prism analyze-sessions --force --last 10  # Re-analyze sessions even if already processed
 ```
 
 This scans existing Claude Code session transcripts and creates observations from them, which can then be extracted into engrams.
@@ -423,6 +424,7 @@ Writes a new engram immediately and auto-syncs `.claude/prism.md`.
 | `--list` | List available sessions |
 | `--since DATE` | Only sessions after this date |
 | `--last N` | Only the N most recent sessions |
+| `--force` | Re-analyze sessions even if already processed (resets tracker for matched sessions) |
 
 ### `prism log` flags
 

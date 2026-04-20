@@ -77,6 +77,8 @@ def main() -> None:
     p_sessions.add_argument("--since", help="Only analyze sessions after DATE (YYYY-MM-DD)")
     p_sessions.add_argument("--last", type=int, help="Only analyze last N sessions")
     p_sessions.add_argument("--project", help="Override project ID")
+    p_sessions.add_argument("--force", action="store_true",
+                            help="Re-analyze sessions even if already processed")
 
     # config
     p_config = subparsers.add_parser("config", help="Get or set configuration")
@@ -286,6 +288,7 @@ def _cmd_analyze_sessions(args) -> None:
         dry_run=args.dry_run,
         since_date=args.since,
         last_n=args.last,
+        force=getattr(args, "force", False),
     )
 
     print("\nSummary:")
