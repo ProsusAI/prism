@@ -117,3 +117,4 @@ Config lives at `~/.prism/config.json`.
 ## See also
 
 [DOCS.md](DOCS.md) -- Comprehensive technical documentation covering architecture, data formats, extraction pipeline, MCP protocol, slash commands, and configuration reference.
+[prism_commands.md](prism_commands.md) -- Comprehensive list of user commands, claude skills and MCP tools. 

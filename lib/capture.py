@@ -61,7 +61,7 @@ def main() -> None:
     line = json.dumps(obs, ensure_ascii=False) + "\n"
     line_bytes = line.encode("utf-8")
     obs_path = str(project_dir / "observations.jsonl")
-    fd = os.open(obs_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    fd = os.open(obs_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
     try:
         os.write(fd, line_bytes)
     finally:
@@ -214,13 +214,13 @@ def _spawn_background(prism_home: Path, args: list) -> None:
         return
 
     try:
-        devnull = open(os.devnull, "w")
-        subprocess.Popen(
-            [sys.executable, prism_cli] + args,
-            stdout=devnull,
-            stderr=devnull,
-            start_new_session=True,
-        )
+        with open(os.devnull, "w") as devnull:
+            subprocess.Popen(
+                [sys.executable, prism_cli] + args,
+                stdout=devnull,
+                stderr=devnull,
+                start_new_session=True,
+            )
     except OSError:
         pass
 

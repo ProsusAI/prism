@@ -70,6 +70,11 @@ def cmd_init() -> None:
     # Generate initial .claude/prism.md context file
     sync_claude_code(project_id)
 
+    # Warn if project could not be identified via git
+    if project_id == "global":
+        print("\n\033[33mWarning: not a git repo -- observations will go into the global bucket.\033[0m")
+        print("  Run 'prism init' from inside a git repo for project-scoped knowledge.")
+
     # Print concise summary (D-06, D-11)
     print(f"\n\033[32mPrism initialized for {project_name} ({project_id})\033[0m")
     print()
@@ -130,6 +135,7 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     # --- MCP Server ---
     mcp_servers = existing.get("mcpServers", {})
     mcp_servers["prism"] = {
+        "type": "stdio",
         "command": "python3",
         "args": [str(PRISM_HOME / "lib" / "mcp_server.py")],
         "env": {"PRISM_PROJECT_ID": project_id},
@@ -314,15 +320,15 @@ tags: [manual]
     )
     add_entry(entry)
 
+    print(f"Learned: {entry_id} (confidence: 0.9)")
+    print(f"File: {filepath}")
+
     # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
     from .sync import sync_claude_code
     sync_claude_code(project_id)
 
-    print(f"Learned: {entry_id} (confidence: 0.9)")
-    print(f"File: {filepath}")
 
-
-def cmd_forget(entry_id: str) -> None:
+def cmd_forget(entry_id: str, _skip_sync: bool = False) -> None:
     """Archive an entry (remove from active context)."""
     entry = get_entry(entry_id)
     if not entry:
@@ -340,11 +346,12 @@ def cmd_forget(entry_id: str) -> None:
 
     # Remove from index
     remove_entry(entry_id)
-    # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
-    from .project import detect_project_id as _detect_pid
-    from .sync import sync_claude_code
-    pid = entry.get("project_id", _detect_pid())
-    sync_claude_code(pid)
+
+    if not _skip_sync:
+        from .project import detect_project_id as _detect_pid
+        from .sync import sync_claude_code
+        pid = entry.get("project_id", _detect_pid())
+        sync_claude_code(pid)
 
     print(f"Forgot: {entry_id}")
 
@@ -360,8 +367,8 @@ def cmd_correct(entry_id: str, correction_text: str) -> None:
     scope = old_entry.get("scope", "project")
     domain = old_entry.get("domain", "general")
 
-    # Archive old entry
-    cmd_forget(entry_id)
+    # Archive old entry without triggering an intermediate sync
+    cmd_forget(entry_id, _skip_sync=True)
 
     # Create new entry with correction
     new_id = _text_to_id(correction_text)
@@ -554,7 +561,7 @@ def cmd_config(key=None, value=None) -> None:
     One arg: show value for that key.
     Two args: set key to value (auto-parses numbers and bools).
 
-    Supports dotted keys for nested access: extraction.threshold -> extract_threshold (D-10).
+    Supports dotted keys: extract.threshold -> extract_threshold (D-10).
     """
     from .config import get_config, save_config
 
@@ -573,7 +580,7 @@ def cmd_config(key=None, value=None) -> None:
         print("Set a value: prism config <key> <value>")
         return
 
-    # Normalize dotted key: extraction.threshold -> extract_threshold
+    # Normalize dotted key: extract.threshold -> extract_threshold
     normalized_key = key.replace(".", "_")
     if normalized_key not in config and key in config:
         normalized_key = key
@@ -624,7 +631,13 @@ def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False,
         print("No observations yet. Start using Claude Code tools -- they'll be captured automatically.")
         return
 
-    lines = obs_path.read_text().strip().split("\n")
+    content = obs_path.read_text().strip()
+    if not content:
+        if not json_output:
+            print("No observations yet. Start using Claude Code tools -- they'll be captured automatically.")
+        return
+
+    lines = content.split("\n")
     recent = lines[-last_n:]
 
     if json_output:
