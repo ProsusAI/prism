@@ -487,6 +487,72 @@ def cmd_maintain() -> None:
 
 
 
+def cmd_disable_hook() -> None:
+    """Remove the Prism PreToolUse capture hook from .claude/settings.local.json.
+
+    Stops automatic background observation capture and the AI extraction/review
+    calls it triggers. MCP server, skills, engrams, and all CLI commands remain
+    fully functional. Users can still run 'prism analyze-sessions --extract'
+    manually after a session to get the same learning at their own pace.
+    """
+    settings_path = Path.cwd() / ".claude" / "settings.local.json"
+    if not settings_path.exists():
+        print("No .claude/settings.local.json found -- hook was not installed for this project.")
+        return
+
+    try:
+        existing = json.loads(settings_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"Could not read settings.local.json: {e}")
+        return
+
+    hooks = existing.get("hooks", {})
+    pre = hooks.get("PreToolUse", [])
+    capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
+
+    # Filter out any matcher group whose hooks list contains the prism capture command.
+    # Leave all other hooks (e.g. from GSD or other tools) untouched.
+    filtered = [
+        group for group in pre
+        if not any(capture_cmd in h.get("command", "") for h in group.get("hooks", []))
+    ]
+
+    if len(filtered) == len(pre):
+        print("Prism capture hook not found in .claude/settings.local.json -- nothing to remove.")
+        return
+
+    if filtered:
+        hooks["PreToolUse"] = filtered
+    else:
+        hooks.pop("PreToolUse", None)
+
+    if hooks:
+        existing["hooks"] = hooks
+    else:
+        existing.pop("hooks", None)
+
+    settings_path.write_text(json.dumps(existing, indent=2) + "\n")
+    print("Prism capture hook disabled.")
+    print()
+    print("  MCP server, skills, and engrams are unchanged.")
+    print("  To capture knowledge manually: prism analyze-sessions --extract")
+    print("  To re-enable:                  prism enable hook")
+
+
+def cmd_enable_hook() -> None:
+    """Re-add the Prism PreToolUse capture hook to .claude/settings.local.json."""
+    project_id = detect_project_id()
+    _setup_hooks_and_mcp(project_id)
+    print("Prism capture hook enabled.")
+    print()
+    print("  Observations will be captured automatically on every tool use.")
+    print("  Background extraction triggers at {} observations (configurable).".format(
+        __import__("json").loads((PRISM_HOME / "config.json").read_text()).get("extract_threshold", 15)
+        if (PRISM_HOME / "config.json").exists() else 15
+    ))
+    print("  To disable: prism disable hook")
+
+
 def cmd_unlock() -> None:
     """Force-clear a stuck extraction lock."""
     lock = PRISM_HOME / ".extracting"
@@ -496,6 +562,170 @@ def cmd_unlock() -> None:
     age = int(time.time() - lock.stat().st_mtime)
     lock.unlink(missing_ok=True)
     print(f"Lock cleared (was {age}s old). You can now run 'prism extract'.")
+
+
+def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
+    """Remove all Prism integration from the current project. Undoes prism init.
+
+    Removes: PreToolUse hook, MCP server entry, .claude/prism.md,
+    .claude/.prism_project_id, .claude/skills/ Prism symlinks,
+    ~/.prism/projects/<id>/, index entries, session tracker entries,
+    and the Prism block in .gitignore.
+
+    ~/.prism/ global install is untouched. Other projects are unaffected.
+    Run 'prism init' to re-initialize.
+    """
+    if not project_id:
+        project_id = detect_project_id()
+    project_name = detect_project_name()
+
+    settings_path = Path.cwd() / ".claude" / "settings.local.json"
+    prism_md = Path.cwd() / ".claude" / "prism.md"
+    project_id_cache = Path.cwd() / ".claude" / ".prism_project_id"
+    skills_dest = Path.cwd() / ".claude" / "skills"
+    project_dir = PRISM_HOME / "projects" / project_id
+
+    print(f"This will remove all Prism integration from {project_name} ({project_id}):")
+    print(f"  Hook + MCP entries in {settings_path.relative_to(Path.cwd()) if settings_path.exists() else settings_path}")
+    print(f"  {prism_md}")
+    print(f"  {project_id_cache}")
+    print(f"  Prism skill symlinks in .claude/skills/")
+    print(f"  {project_dir}/")
+    print(f"  Prism block in .gitignore")
+    print()
+    print("  ~/.prism/ global install is untouched.")
+
+    if not yes:
+        confirm = input("\nType 'yes' to confirm: ").strip().lower()
+        if confirm != "yes":
+            print("Aborted.")
+            return
+
+    capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
+
+    # Remove hook + MCP from settings.local.json
+    if settings_path.exists():
+        try:
+            existing = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+
+        # Strip PreToolUse entries that reference capture.sh
+        hooks = existing.get("hooks", {})
+        pre = hooks.get("PreToolUse", [])
+        filtered = [
+            g for g in pre
+            if not any(capture_cmd in h.get("command", "") for h in g.get("hooks", []))
+        ]
+        if filtered:
+            hooks["PreToolUse"] = filtered
+        else:
+            hooks.pop("PreToolUse", None)
+        if hooks:
+            existing["hooks"] = hooks
+        else:
+            existing.pop("hooks", None)
+
+        # Strip MCP server entry
+        mcp = existing.get("mcpServers", {})
+        mcp.pop("prism", None)
+        if mcp:
+            existing["mcpServers"] = mcp
+        else:
+            existing.pop("mcpServers", None)
+
+        # Delete the file if nothing remains, otherwise write back
+        if existing:
+            settings_path.write_text(json.dumps(existing, indent=2) + "\n")
+        else:
+            settings_path.unlink()
+        print("  Removed hook + MCP from settings.local.json")
+
+    # Delete context file
+    if prism_md.exists():
+        prism_md.unlink()
+        print(f"  Deleted {prism_md.name}")
+
+    # Delete project ID cache
+    if project_id_cache.exists():
+        project_id_cache.unlink()
+        print(f"  Deleted {project_id_cache.name}")
+
+    # Remove Prism skill symlinks (only links pointing into ~/.prism/skills/)
+    prism_skills_src = str(PRISM_HOME / "skills")
+    if skills_dest.exists():
+        removed_skills = 0
+        for entry in skills_dest.iterdir():
+            if entry.is_symlink() and str(entry.resolve()).startswith(prism_skills_src):
+                entry.unlink()
+                removed_skills += 1
+        if removed_skills:
+            print(f"  Removed {removed_skills} Prism skill symlink(s) from .claude/skills/")
+
+    # Delete project data directory
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+        print(f"  Deleted ~/.prism/projects/{project_id}/")
+
+    # Clear extraction lock if it belongs to this project
+    lock = PRISM_HOME / ".extracting"
+    lock.unlink(missing_ok=True)
+
+    # Remove index entries for this project
+    index = load_index()
+    before = len(index["engrams"])
+    index["engrams"] = [e for e in index["engrams"] if e.get("project_id") != project_id]
+    if len(index["engrams"]) < before:
+        save_index(index)
+        print(f"  Cleared {before - len(index['engrams'])} index entries")
+
+    # Remove session tracker entries for this project
+    tracker_path = PRISM_HOME / "analyzed-sessions.json"
+    if tracker_path.exists():
+        try:
+            with open(tracker_path) as f:
+                tracker = json.load(f)
+            before_sessions = len(tracker.get("sessions", {}))
+            tracker["sessions"] = {
+                sid: entry for sid, entry in tracker.get("sessions", {}).items()
+                if entry.get("project_id") != project_id
+            }
+            if len(tracker["sessions"]) < before_sessions:
+                with open(tracker_path, "w") as f:
+                    json.dump(tracker, f, indent=2)
+                    f.write("\n")
+                print(f"  Cleared {before_sessions - len(tracker['sessions'])} session tracker entries")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Remove Prism block from .gitignore
+    _remove_gitignore_entries()
+
+    print(f"\nPrism uninstalled from {project_name}.")
+    print("Run 'prism init' to re-initialize.")
+
+
+def _remove_gitignore_entries() -> None:
+    """Remove the Prism-managed block from .gitignore."""
+    gitignore_path = Path.cwd() / ".gitignore"
+    if not gitignore_path.exists():
+        return
+
+    content = gitignore_path.read_text()
+    lines = content.splitlines(keepends=True)
+
+    prism_entries = {
+        ".claude/settings.local.json",
+        ".claude/prism.md",
+        ".claude/skills/",
+        ".claude/.prism_project_id",
+        "# Prism (auto-generated, machine-specific)",
+    }
+
+    filtered = [l for l in lines if l.rstrip("\n") not in prism_entries]
+    if len(filtered) < len(lines):
+        gitignore_path.write_text("".join(filtered))
+        print("  Cleaned .gitignore")
 
 
 def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:

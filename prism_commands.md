@@ -12,7 +12,10 @@
 | `prism analyze-sessions [flags]` | Bootstrap observations from existing Claude Code session transcripts |
 | `prism review --session ID [--project ID]` | Analyze a single session transcript for conversational insights |
 | `prism unlock` | Force-clear a stuck extraction lock (use if `prism extract` says "already in progress" after a crash) |
-| `prism reset [--yes] [--project ID]` | Delete all project data (engrams, observations, candidates) and start fresh |
+| `prism disable hook` | Remove the background PreToolUse capture hook from `.claude/settings.local.json` — stops automatic observation capture and the AI extraction/review calls it triggers. MCP, skills, and all CLI commands remain fully functional. Use when you want to control token spend and run `prism analyze-sessions --extract` manually instead. |
+| `prism enable hook` | Re-add the PreToolUse capture hook (reverses `prism disable hook`) |
+| `prism reset [--yes] [--project ID]` | Delete all project data (engrams, observations, candidates) and start fresh — hook and MCP stay wired, Prism resumes capturing immediately |
+| `prism uninstall [--yes] [--project ID]` | Remove all Prism integration from this project: hook, MCP entry, `.claude/prism.md`, skill symlinks, project data, and `.gitignore` entries. Undoes `prism init`. `~/.prism/` global install and other projects are untouched. Run `prism init` to re-initialize. |
 | `prism maintain` | Run confidence decay cycle; archive engrams below threshold |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format (requires confidence ≥ 0.7, evidence ≥ 3) |
 | `prism log [--last N] [--extractions] [--insights] [--json]` | Show recent observations or extraction history |

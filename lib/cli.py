@@ -46,10 +46,37 @@ def main() -> None:
     # unlock
     subparsers.add_parser("unlock", help="Force-clear a stuck extraction lock")
 
+    # disable
+    p_disable = subparsers.add_parser("disable", help="Disable a Prism feature")
+    p_disable.add_argument(
+        "feature",
+        choices=["hook"],
+        help="Feature to disable. 'hook' removes the background PreToolUse capture hook "
+             "from .claude/settings.local.json -- stops automatic observation capture and "
+             "the AI extraction/review calls it triggers. MCP, skills, and all CLI commands "
+             "remain fully functional.",
+    )
+
+    # enable
+    p_enable = subparsers.add_parser("enable", help="Re-enable a Prism feature")
+    p_enable.add_argument(
+        "feature",
+        choices=["hook"],
+        help="Feature to enable. 'hook' re-adds the PreToolUse capture hook.",
+    )
+
     # reset
     p_reset = subparsers.add_parser("reset", help="Delete all project data and start fresh")
     p_reset.add_argument("--project", help="Override project ID")
     p_reset.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
+
+    # uninstall
+    p_uninstall = subparsers.add_parser(
+        "uninstall",
+        help="Remove Prism from this project (undoes prism init)",
+    )
+    p_uninstall.add_argument("--project", help="Override project ID")
+    p_uninstall.add_argument("--yes", action="store_true", help="Skip confirmation prompt")
 
     # maintain
     subparsers.add_parser("maintain", help="Run confidence decay, archive expired")
@@ -187,9 +214,21 @@ def main() -> None:
         from .commands import cmd_unlock
         cmd_unlock()
 
+    elif args.command == "disable":
+        from .commands import cmd_disable_hook
+        cmd_disable_hook()
+
+    elif args.command == "enable":
+        from .commands import cmd_enable_hook
+        cmd_enable_hook()
+
     elif args.command == "reset":
         from .commands import cmd_reset
         cmd_reset(project_id=args.project, yes=args.yes)
+
+    elif args.command == "uninstall":
+        from .commands import cmd_uninstall
+        cmd_uninstall(project_id=args.project, yes=args.yes)
 
     elif args.command == "maintain":
         from .commands import cmd_maintain
@@ -220,7 +259,7 @@ def main() -> None:
 
     # Safety net: check if auto-extraction should trigger
     # Skip for commands that already handle extraction or are too early
-    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", None):
+    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "disable", "enable", "uninstall", None):
         try:
             from .project import detect_project_id
             from .trigger import maybe_trigger_extraction

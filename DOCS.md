@@ -149,6 +149,25 @@ Symlinks `~/.prism/skills/` into the project's `.claude/skills/` directory, maki
 
 Creates an initial `.claude/prism.md` with any existing knowledge for the project.
 
+### Managing the capture hook
+
+The PreToolUse hook fires on every tool call. It costs no tokens itself (pure file I/O), but it triggers background AI processes that do:
+
+| Background process | Trigger | Approximate cost |
+|---|---|---|
+| `prism review` (session insights) | Every 5 observations | ~2k–8k tokens (Haiku) |
+| `prism extract` (engram extraction) | Every 15 observations | ~5k–15k tokens (Haiku + Sonnet) |
+
+Users who want to control when AI calls happen can disable the hook and run extraction manually:
+
+```bash
+prism disable hook          # Remove PreToolUse hook from this project
+prism analyze-sessions --extract  # Manually extract after a session
+prism enable hook           # Re-add the hook when wanted
+```
+
+MCP tools, skills, and all CLI commands remain fully functional with the hook disabled.
+
 ### Project Detection
 
 Prism identifies projects by a stable hash derived from git metadata. Detection order:
@@ -410,7 +429,10 @@ Writes a new engram immediately and auto-syncs `.claude/prism.md`.
 | `prism review --session ID [--project ID]` | Analyze a session transcript |
 | `prism analyze-sessions [flags]` | Bootstrap from existing Claude Code sessions |
 | `prism unlock` | Force-clear a stuck extraction lock |
+| `prism disable hook` | Remove the background PreToolUse capture hook from this project |
+| `prism enable hook` | Re-add the PreToolUse capture hook |
 | `prism reset [--yes] [--project ID]` | Delete all project data (engrams, observations, candidates) and start fresh |
+| `prism uninstall [--yes] [--project ID]` | Remove all Prism integration from this project (undoes `prism init`) |
 | `prism maintain` | Run confidence decay and archive expired engrams |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format |
 | `prism log [--last N] [--extractions] [--insights] [--json]` | Show recent observations |
@@ -806,7 +828,7 @@ Check that hooks are registered:
 cat ~/.claude/settings.local.json | python3 -m json.tool
 ```
 
-Look for `PreToolUse` and `PostToolUse` entries pointing to `~/.prism/hooks/capture.sh`. If missing, run `prism init` again.
+Look for a `PreToolUse` entry pointing to `~/.prism/hooks/capture.sh`. If missing, run `prism init` again or `prism enable hook`.
 
 ### MCP server not connecting
 
