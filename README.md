@@ -6,99 +6,150 @@ A knowledge layer for Claude Code. Prism watches how you work, learns your prefe
 
 ## What it does
 
-**Personal learning** -- Prism observes your Claude Code sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" -- living knowledge units that strengthen with evidence and decay without use.
+**Personal learning** — Prism observes your Claude Code sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" — living knowledge units that strengthen with evidence and decay without use.
 
-**Team knowledge** -- Promote your best engrams into publishable skills, or run slash commands to mine your codebase and git history for architectural patterns. Publish them to a team registry so everyone benefits.
+**Team knowledge** — Promote your best engrams into publishable skills, or run slash commands to mine your codebase and git history for architectural patterns. Publish them to a team registry so everyone benefits.
 
-## Install
+## Get started
+
+This walkthrough takes you from install to your first extracted knowledge. Follow steps in order — each has a check so you know it worked.
+
+### 1. Install
 
 ```bash
-git clone <repo-url> && cd prism
+git clone https://github.com/ProsusAI/prism.git && cd prism
 ./install.sh
 ```
 
-Requirements: Python 3.12+, git, [Claude Code](https://claude.ai/code)
+Requirements: Python 3.12+, git, [Claude Code](https://claude.ai/code). The installer creates `~/.prism/` and symlinks the `prism` CLI to `~/.local/bin/prism`. Safe to re-run on upgrades.
 
-The installer creates `~/.prism/`, copies everything it needs, and symlinks the `prism` CLI to `~/.local/bin/prism`. Safe to re-run on upgrades.
+**Check:** `prism --help` prints usage. If you get "command not found", add `~/.local/bin` to your PATH — the installer will have warned you if it's missing.
 
-## Quick start
+### 2. Initialize in an active project
+
+Pick a project you're actively working on. Prism learns from real sessions, so choose somewhere you'll actually use it this week.
 
 ```bash
-# Initialize Prism in your project
-cd your-project
+cd ~/your-project
 prism init
-
-# That's it. Prism is now:
-# - Observing your Claude Code sessions via hooks
-# - Available as an MCP server for mid-session queries
-# - Syncing knowledge to .claude/prism.md for session context
 ```
 
-## Teach it directly
+**Check:** `.claude/settings.local.json` contains a `PreToolUse` hook pointing to `~/.prism/hooks/capture.sh`. That hook is how Prism observes your sessions.
+
+### 3. Teach a preference
+
+Before waiting for automatic extraction, teach Prism something you know you always want.
 
 ```bash
-# Teach a preference
-prism learn "Always use pnpm, never npm"
-
-# Correct something
-prism correct <engram-id> "Use vitest not jest for this project"
-
-# Remove something
-prism forget <engram-id>
+prism learn "always use conventional commits in this project"
 ```
 
-## See what it knows
+**Check:** `cat .claude/prism.md` shows the preference. `prism status` lists it with confidence `0.90` — that's the manual-teach starting confidence.
+
+
+### 4. Let Prism learn from your previous sessions
+
+If you have existing sessions, mine them immediately with commands below. If not, run two or three sessions on the project first. Prism will automatically start learning your behaviour
 
 ```bash
-# Current knowledge for this project
-prism status
+prism analyze-sessions --last 5   # prints session IDs with observation counts
+prism log --last 20               # confirms observations were written
+prism extract                     # runs the extraction pipeline
+```
 
-# Recent observations
-prism log --last 20
+Then check what came out:
 
-# Run extraction from accumulated observations
-prism extract
+```bash
+prism status              # active engrams grouped by kind, with confidence scores. More details in prism.md
+prism log --extractions   # validation decisions (APPROVED / REJECTED / MODIFIED) and why
+```
 
-# Bootstrap from past Claude Code sessions
-prism analyze-sessions --last 10
+### 5. Correct a preference
+
+Corrections are more powerful than teaches — they replace a specific engram and bump confidence. Try it now so you know how it works before you need it.
+
+```bash
+prism status          # copy the ID of the entry you just created
+prism correct <id> "always use conventional commits, never squash merge"
+prism status          # old entry gone, new one at confidence 0.90
+```
+
+### 6. Search a past session
+
+Prism can retrieve something specific you discussed in a past Claude session — useful for decisions you remember making but can't find. Search runs SQLite full-text under the hood, so use concrete words rather than paraphrased intent: `"retry backoff"` finds more than `"how we handle failures"`.
+
+```bash
+prism analyze-sessions "something specific you discussed" --last 10
+```
+
+> This is a newer feature. Try it with something you genuinely discussed — note what works well and where it misses, that feedback is valuable.
+
+### 7. Promote an engram to a skill
+
+Once you have an engram with real evidence, promote it into a publishable skill.
+
+```bash
+prism status           # find an engram with confidence >= 0.7 and evidence >= 3
+prism promote <id>     # creates _analysis/extracted_skills_codebase/<skill-name>/ with plugin.json and SKILL.md
+```
+
+The skill directory is ready to publish to your team registry or contribute upstream.
+
+---
+
+## Commands
+
+**Manage knowledge**
+
+```bash
+prism learn "Always use pnpm, never npm"    # teach a preference
+prism correct <id> "Use vitest not jest"    # replace an engram
+prism forget <id>                           # remove an engram
+prism status                                # show active engrams with confidence scores
+```
+
+**Observe and extract**
+
+```bash
+prism log --last 20                # recent observations
+prism log --extractions            # extraction validation decisions
+prism extract                      # run the extraction pipeline
+prism analyze-sessions --last 10   # mine past Claude sessions
 ```
 
 ## Team skills
 
 ```bash
-# Promote a well-validated engram to a publishable skill
-prism promote <engram-id>
+prism promote <engram-id>      # promote a well-validated engram to a publishable skill
 
-# Run analysis pipelines (slash commands in Claude Code)
-/run-analysis-pipeline    # Full codebase analysis
-/run-history-pipeline     # Git history to skills
-/extract-skills           # Analysis reports to skills
-/curate-skills            # Quality pass
-/publish-skills           # Publish to team registry
-/advise-skills            # Query registry for advice
-/audit-code               # Audit code against known patterns
+# Slash commands in Claude Code
+/run-analysis-pipeline    # full codebase analysis
+/run-history-pipeline     # git history to skills
+/extract-skills           # analysis reports to skills
+/curate-skills            # quality pass
+/publish-skills           # publish to team registry
+/advise-skills            # query registry for advice
+/audit-code               # audit code against known patterns
 ```
 
 ## How it works
 
 Prism has two channels for getting knowledge into Claude Code:
 
-**Push** -- `.claude/prism.md` is auto-generated with your highest-priority knowledge (corrections, pinned items, top preferences). Claude Code reads this at session start.
+**Push** — `.claude/prism.md` is auto-generated with your highest-priority knowledge (corrections, pinned items, top preferences). Claude Code reads this at session start.
 
-**Pull** -- An MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools. Claude queries these mid-session when it needs specific knowledge.
+**Pull** — An MCP server exposes `prism_search`, `prism_get`, `prism_relevant`, and `prism_record` tools. Claude queries these mid-session when it needs specific knowledge.
 
-Knowledge has a lifecycle: engrams start at a base confidence, strengthen when the same pattern is observed again, and decay slowly without reinforcement. Run `prism maintain` periodically (or let it happen automatically) to keep things fresh.
+Engrams have a lifecycle: they start at a base confidence, strengthen when the same pattern is observed again, and decay slowly without reinforcement. Run `prism maintain` periodically to keep things fresh.
 
 ## Configuration
 
 ```bash
-prism config                        # Show all settings
-prism config extract_threshold 20   # Change a setting
+prism config                        # show all settings
+prism config extract_threshold 20   # change a setting
 ```
 
-Key settings: `extract_threshold` (observations before auto-extraction), `decay_rate_per_week`, `max_context_lines` (prism.md size), `registry_url` (team registry).
-
-Config lives at `~/.prism/config.json`.
+Key settings: `extract_threshold` (observations before auto-extraction), `decay_rate_per_week`, `max_context_lines` (prism.md size), `registry_url` (team registry). Config lives at `~/.prism/config.json`.
 
 ## Project structure
 
