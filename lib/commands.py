@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import sys
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -89,60 +90,102 @@ def cmd_init() -> None:
 
 
 def _setup_hooks_and_mcp(project_id: str) -> None:
-    """Configure Claude Code hooks and MCP server in .claude/settings.local.json.
+    """Configure Claude Code hooks and MCP server.
 
+    Hooks → .claude/settings.local.json (machine-specific, gitignored).
+    MCP server → ~/.claude.json (projects[cwd].mcpServers) — where Claude Code reads it.
     Carefully merges with existing config -- never clobbers other tools' entries (D-05).
     """
-    settings_path = Path.cwd() / ".claude" / "settings.local.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    claude_dir = Path.cwd() / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read existing settings (T-01-07: handle corrupt JSON gracefully)
-    existing = {}
-    if settings_path.exists():
+    # --- Hooks → settings.local.json ---
+    local_path = claude_dir / "settings.local.json"
+    local = {}
+    if local_path.exists():
         try:
-            existing = json.loads(settings_path.read_text())
+            local = json.loads(local_path.read_text())
         except (json.JSONDecodeError, OSError):
             pass
 
-    # --- Hooks ---
-    hooks = existing.get("hooks", {})
+    hooks = local.get("hooks", {})
     capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
 
-    for event, phase_arg in [
-        ("PreToolUse", "pre"),
-    ]:
+    for event, phase_arg in [("PreToolUse", "pre")]:
         hook_entry = {
             "matcher": "*",
-            "hooks": [{
-                "type": "command",
-                "command": "{} {}".format(capture_cmd, phase_arg),
-            }],
+            "hooks": [{"type": "command", "command": "{} {}".format(capture_cmd, phase_arg)}],
         }
-
         if event not in hooks:
             hooks[event] = [hook_entry]
         else:
-            # Check for existing Prism hook -- don't duplicate
-            existing_cmds = set()
-            for matcher_group in hooks[event]:
-                for h in matcher_group.get("hooks", []):
-                    existing_cmds.add(h.get("command", ""))
+            existing_cmds = {h.get("command", "") for g in hooks[event] for h in g.get("hooks", [])}
             if hook_entry["hooks"][0]["command"] not in existing_cmds:
                 hooks[event].append(hook_entry)
 
-    existing["hooks"] = hooks
+    local["hooks"] = hooks
+    local_path.write_text(json.dumps(local, indent=2) + "\n")
 
-    # --- MCP Server ---
-    mcp_servers = existing.get("mcpServers", {})
+    # --- MCP Server → ~/.claude.json (projects[cwd].mcpServers) ---
+    _write_mcp_to_claude_json(project_id)
+
+
+def _write_mcp_to_claude_json(project_id: str) -> None:
+    """Write prism MCP server entry into ~/.claude.json under projects[cwd].mcpServers."""
+    claude_json_path = Path.home() / ".claude.json"
+    data = {}
+    if claude_json_path.exists():
+        try:
+            data = json.loads(claude_json_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    project_key = str(Path.cwd())
+    projects = data.get("projects", {})
+    project_entry = projects.get(project_key, {})
+    mcp_servers = project_entry.get("mcpServers", {})
     mcp_servers["prism"] = {
-        "type": "stdio",
-        "command": "python3",
+        "command": sys.executable,
         "args": [str(PRISM_HOME / "lib" / "mcp_server.py")],
         "env": {"PRISM_PROJECT_ID": project_id},
     }
-    existing["mcpServers"] = mcp_servers
+    project_entry["mcpServers"] = mcp_servers
+    projects[project_key] = project_entry
+    data["projects"] = projects
 
-    settings_path.write_text(json.dumps(existing, indent=2) + "\n")
+    tmp = claude_json_path.parent / (claude_json_path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.rename(str(tmp), str(claude_json_path))
+
+
+def _remove_mcp_from_claude_json() -> None:
+    """Remove prism MCP server entry from ~/.claude.json for the current project."""
+    claude_json_path = Path.home() / ".claude.json"
+    if not claude_json_path.exists():
+        return
+    try:
+        data = json.loads(claude_json_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    project_key = str(Path.cwd())
+    project_entry = data.get("projects", {}).get(project_key)
+    if not project_entry:
+        return
+
+    mcp = project_entry.get("mcpServers", {})
+    if "prism" not in mcp:
+        return
+    mcp.pop("prism")
+    if not mcp:
+        project_entry.pop("mcpServers", None)
+    else:
+        project_entry["mcpServers"] = mcp
+
+    tmp = claude_json_path.parent / (claude_json_path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.rename(str(tmp), str(claude_json_path))
+    print("  Removed MCP server from ~/.claude.json")
 
 
 def _setup_slash_commands() -> int:
@@ -586,7 +629,8 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
     project_dir = PRISM_HOME / "projects" / project_id
 
     print(f"This will remove all Prism integration from {project_name} ({project_id}):")
-    print(f"  Hook + MCP entries in {settings_path.relative_to(Path.cwd()) if settings_path.exists() else settings_path}")
+    print(f"  Hook in .claude/settings.local.json")
+    print(f"  MCP entry in ~/.claude.json")
     print(f"  {prism_md}")
     print(f"  {project_id_cache}")
     print(f"  Prism skill symlinks in .claude/skills/")
@@ -603,14 +647,13 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
 
     capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
 
-    # Remove hook + MCP from settings.local.json
+    # Remove hook from settings.local.json
     if settings_path.exists():
         try:
             existing = json.loads(settings_path.read_text())
         except (json.JSONDecodeError, OSError):
             existing = {}
 
-        # Strip PreToolUse entries that reference capture.sh
         hooks = existing.get("hooks", {})
         pre = hooks.get("PreToolUse", [])
         filtered = [
@@ -626,20 +669,13 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
         else:
             existing.pop("hooks", None)
 
-        # Strip MCP server entry
-        mcp = existing.get("mcpServers", {})
-        mcp.pop("prism", None)
-        if mcp:
-            existing["mcpServers"] = mcp
-        else:
-            existing.pop("mcpServers", None)
-
-        # Delete the file if nothing remains, otherwise write back
         if existing:
             settings_path.write_text(json.dumps(existing, indent=2) + "\n")
         else:
             settings_path.unlink()
-        print("  Removed hook + MCP from settings.local.json")
+        print("  Removed hook from settings.local.json")
+
+    _remove_mcp_from_claude_json()
 
     # Delete context file
     if prism_md.exists():
