@@ -15,26 +15,27 @@ CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 TRACKER_PATH = PRISM_HOME / "analyzed-sessions.json"
 
 # Heuristic: user text that looks like a correction or preference
-_CORRECTION_STARTS = ("no ", "no,", "don't", "dont", "stop", "actually", "instead", "wait")
-_CORRECTION_CONTAINS = ("always ", "never ", "prefer ", "make sure", "instead of",
-                        "don't use", "do not use", "should use", "not that", "wrong")
+# Matched as whole words, any position.
+import re as _re
+_CORRECTION_KEYWORDS = (
+    "no", "don't", "dont", "stop", "actually", "instead", "wait",
+    "always", "never", "prefer", "wrong", "keep", "reduce", "use",
+    "make sure", "instead of", "don't use", "do not use", "should use", "not that",
+    "i want",
+)
+_CORRECTION_RE = _re.compile(
+    r"\b(" + "|".join(_re.escape(k) for k in _CORRECTION_KEYWORDS) + r")\b",
+    _re.IGNORECASE,
+)
 
 
 def is_correction_like(text: str) -> bool:
     """Heuristic filter: does this user message look like guidance/correction?"""
     if not text or len(text) < 5 or len(text) > 300:
         return False
-    lower = text.lower().strip()
-    # Skip IDE-injected tags
-    if lower.startswith("<"):
+    if text.lstrip().startswith("<"):
         return False
-    for prefix in _CORRECTION_STARTS:
-        if lower.startswith(prefix):
-            return True
-    for phrase in _CORRECTION_CONTAINS:
-        if phrase in lower:
-            return True
-    return False
+    return bool(_CORRECTION_RE.search(text))
 
 
 def resolve_project_id_from_cwd(cwd: str, cache: dict) -> str:
@@ -249,34 +250,34 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
             elif msg_type == "user":
                 content = msg.get("message", {}).get("content", [])
 
-                # toolUseResult at top level (Agent/subagent results)
+                # toolUseResult is IDE metadata present on every user message in modern
+                # Claude Code sessions — only emit an observation when it's an actual
+                # Agent subagent result (dict with a "prompt" key, or an error string).
+                # Never continue here: message.content holds the real tool_result blocks.
                 tool_result = msg.get("toolUseResult")
-                if tool_result:
-                    if isinstance(tool_result, str):
-                        # Simple string result (often errors like "Error: Exit code 1")
-                        is_err = "error" in tool_result.lower()
-                        observations.append({
-                            "timestamp": timestamp,
-                            "event": "tool_rejected" if is_err else "tool_end",
-                            "tool": "unknown",
-                            "input_summary": sanitize_payload(tool_result[:300]),
-                            "session": sid,
-                            "project_id": project_id,
-                            "source": "session_import",
-                        })
-                    elif isinstance(tool_result, dict):
-                        status = tool_result.get("status", "")
-                        event = "tool_rejected" if status == "error" else "tool_end"
-                        observations.append({
-                            "timestamp": timestamp,
-                            "event": event,
-                            "tool": "Agent",
-                            "input_summary": sanitize_payload(str(tool_result.get("prompt", ""))[:300]),
-                            "session": sid,
-                            "project_id": project_id,
-                            "source": "session_import",
-                        })
-                    continue
+                if isinstance(tool_result, str) and tool_result:
+                    is_err = "error" in tool_result.lower()
+                    observations.append({
+                        "timestamp": timestamp,
+                        "event": "tool_rejected" if is_err else "tool_end",
+                        "tool": "unknown",
+                        "input_summary": sanitize_payload(tool_result[:300]),
+                        "session": sid,
+                        "project_id": project_id,
+                        "source": "session_import",
+                    })
+                elif isinstance(tool_result, dict) and tool_result.get("prompt"):
+                    status = tool_result.get("status", "")
+                    event = "tool_rejected" if status == "error" else "tool_end"
+                    observations.append({
+                        "timestamp": timestamp,
+                        "event": event,
+                        "tool": "Agent",
+                        "input_summary": sanitize_payload(str(tool_result["prompt"])[:300]),
+                        "session": sid,
+                        "project_id": project_id,
+                        "source": "session_import",
+                    })
 
                 if isinstance(content, list):
                     for block in content:
@@ -375,6 +376,28 @@ def analyze_all_sessions(
         since_date=since_date,
         last_n=last_n,
     )
+
+    # --force: strip existing observations for sessions about to be re-processed
+    # so re-runs don't stack duplicates. Keyed by session ID — surgical, not blanket.
+    if force and not dry_run:
+        force_ids = {s["session_id"] for s in sessions}
+        affected_pids = {s["project_id"] for s in sessions}
+        for pid in affected_pids:
+            obs_path = get_observations_path(pid)
+            if not obs_path.exists():
+                continue
+            try:
+                kept = []
+                for line in obs_path.read_text().splitlines(keepends=True):
+                    try:
+                        sid = json.loads(line).get("session", "")
+                    except (json.JSONDecodeError, ValueError):
+                        sid = ""
+                    if sid not in force_ids:
+                        kept.append(line)
+                obs_path.write_text("".join(kept))
+            except OSError:
+                pass
 
     processed = 0
     skipped = 0

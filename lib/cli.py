@@ -30,7 +30,7 @@ def main() -> None:
 
     # learn
     p_learn = subparsers.add_parser("learn", help="Manually teach a preference or fact")
-    p_learn.add_argument("text", help="The knowledge to learn")
+    p_learn.add_argument("text", nargs='+', help="The knowledge to learn")
     p_learn.add_argument("--scope", choices=["project", "global"], default="project")
     p_learn.add_argument("--project", help="Override project ID")
 
@@ -41,7 +41,7 @@ def main() -> None:
     # correct
     p_correct = subparsers.add_parser("correct", help="Supersede a knowledge entry with correction")
     p_correct.add_argument("id", help="Entry ID to correct")
-    p_correct.add_argument("text", help="The corrected knowledge")
+    p_correct.add_argument("text", nargs='+', help="The corrected knowledge")
 
     # unlock
     subparsers.add_parser("unlock", help="Force-clear a stuck extraction lock")
@@ -203,7 +203,7 @@ def main() -> None:
 
     elif args.command == "learn":
         from .commands import cmd_learn
-        cmd_learn(args.text, project_id=args.project, scope=args.scope)
+        cmd_learn(" ".join(args.text), project_id=args.project, scope=args.scope)
 
     elif args.command == "forget":
         from .commands import cmd_forget
@@ -211,7 +211,7 @@ def main() -> None:
 
     elif args.command == "correct":
         from .commands import cmd_correct
-        cmd_correct(args.id, args.text)
+        cmd_correct(args.id, " ".join(args.text))
 
     elif args.command == "unlock":
         from .commands import cmd_unlock

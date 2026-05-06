@@ -113,12 +113,10 @@ def _phase1_extract(project_id: str) -> int:
 
     # Build the prompt for Haiku
     prompt = f"""Read the extractor instructions at {extractor_prompt_path}.
-
-Then analyze the observations at {observations_path}.
-The current knowledge index is at {index_path}.
-Write candidate knowledge entry files to {candidates_dir}/.
-
-The project ID is: {project_id}
+Analyze the observations at {observations_path}.
+Current knowledge index: {index_path}.
+Write candidate files to {candidates_dir}/. Project ID: {project_id}.
+No output text. Write files only.
 """
 
     # Run claude --print --model haiku
@@ -170,30 +168,27 @@ def _phase2_validate(project_id: str) -> dict:
     # Build the prompt for Sonnet
     candidate_list = "\n".join(f"  - {c.name}" for c in candidates)
     n_candidates = len(candidates)
+    engrams_dir = get_engrams_dir(project_id)
     prompt = f"""Read the validator instructions at {validator_prompt_path}.
-
 Read the constitution at {constitution_path}.
 Read the knowledge index at {index_path}.
 
-Review each candidate file in {candidates_dir}/:
+Review each candidate in {candidates_dir}/:
 {candidate_list}
 
-For each candidate, evaluate all 4 gates and output your decisions.
+For each candidate: evaluate all 5 gates, then perform file operations:
+- APPROVED → move to {engrams_dir}/
+- REJECTED → delete from candidates/
+- MODIFIED → apply changes, then move to {engrams_dir}/
 
-CRITICAL: You MUST output a decision for ALL {n_candidates} candidates in a single JSON array.
-Every candidate — whether APPROVED, REJECTED, or MODIFIED — must appear in the array.
-A candidate with no decision is a bug. The array must have exactly {n_candidates} elements.
+CRITICAL OUTPUT REQUIREMENT: After ALL file operations, your response MUST end with ONLY a single ```json fenced block. Do NOT write prose, markdown tables, or summaries — any text outside the JSON block will cause a parse failure. The JSON block must be the last thing in your response.
 
-Output your decisions as a JSON array wrapped in ```json fences:
-[
-  {{"candidate_id": "...", "decision": "APPROVED|REJECTED|MODIFIED", "gates": {{...}}, "modifications": "...", "deprecates": []}},
-  ...
-]
+Exactly {n_candidates} elements — one per candidate, no omissions.
+`gates` contains only failed gates: {{"gate_name": "reason"}}. Omit passing gates.
 
-After outputting the JSON array:
-- For APPROVED candidates: move them from {candidates_dir}/ to the entries directory
-- For REJECTED candidates: delete them from {candidates_dir}/
-- For MODIFIED candidates: apply modifications then move to the entries directory
+```json
+[{{"candidate_id": "...", "decision": "APPROVED|REJECTED|MODIFIED", "gates": {{}}, "deprecates": []}}]
+```
 """
 
     try:
@@ -239,7 +234,7 @@ def _parse_validation_output(output: str, project_id: str) -> dict:
     try:
         import re
 
-        matches = re.findall(r"```json\s*\n(.*?)\n\s*```", output, re.DOTALL)
+        matches = re.findall(r"```(?:json)?\s*\n(.*?)```", output, re.DOTALL)
 
         if len(matches) > 1:
             # Multiple fenced json blocks — parse each independently so one

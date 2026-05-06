@@ -93,39 +93,33 @@ What passes:
 
 ## Output
 
-Output your decisions as a single JSON array. Each element is one decision object covering one candidate:
+After all file operations, your response MUST end with a single fenced json block (triple backtick json). Do NOT write prose, tables, or summaries — any text outside the JSON block causes a parse failure.
+
+`gates` contains only **failed** gates — omit passing gates. Value is the failure reason.
 
 ```json
 [
   {
     "candidate_id": "the-entry-id",
     "decision": "APPROVED|REJECTED|MODIFIED",
-    "gates": {
-      "constitution": {"passed": true, "reason": "...if failed"},
-      "evidence": {"passed": true, "reason": "...if failed", "observation_count": 0},
-      "contradiction": {"passed": true, "reason": "...if failed", "checked_against": []},
-      "safety": {"passed": true, "reason": "...if failed"},
-      "novelty": {"passed": true, "reason": "...if failed"}
-    },
-    "modifications": "...if MODIFIED, what was changed",
-    "deprecates": ["existing-ids-to-deprecate"]
+    "gates": {"evidence": "only 1 session cited", "novelty": "generic best practice"},
+    "modifications": "what changed (MODIFIED only, omit otherwise)",
+    "deprecates": []
   }
 ]
 ```
 
+- `gates`: `{}` when all pass; only include keys for failed gates.
+- `modifications`: omit unless MODIFIED.
+- `deprecates`: list of existing entry IDs superseded; `[]` if none.
+
 ## Decision Rules
 
-- **APPROVED**: All 4 gates pass. Move candidate to the entries directory.
-- **REJECTED**: Any gate fails. Delete from candidates/. Log the reason.
-- **MODIFIED**: All gates pass after adjustments. Common modifications:
-  - Lower confidence (evidence seems thin but present)
-  - Narrow scope (claimed global but evidence is project-specific)
-  - Clarify trigger (too broad or ambiguous)
-  - Remove unsafe phrasing while keeping the core knowledge
+- **APPROVED**: All 5 gates pass. Move candidate to the entries directory.
+- **REJECTED**: Any gate fails. Delete from candidates/.
+- **MODIFIED**: All gates pass after adjustments (lower confidence, narrow scope, clarify trigger, remove unsafe phrasing). Move to entries directory.
 
-When in doubt, REJECT. The extractor will propose again with more evidence next time.
-
-Approved entries may later be promoted to team skills via `prism promote` -- ensure quality is publication-worthy.
+When in doubt, REJECT.
 
 ## Rules
 

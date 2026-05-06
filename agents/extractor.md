@@ -110,6 +110,7 @@ For solution, add `## What Failed` and `## What Worked` sections.
 4. Do NOT extract standard Claude behavior or generic engineering practice
 5. Each candidate file named `{id}.md` in the candidates directory
 6. Quality over quantity — propose fewer, better entries
+7. Write candidate files only. No summary, no explanation, no output text.
 
 ## Prism Ecosystem Awareness
 

@@ -1060,11 +1060,8 @@ def _log_rejected(last_n: int, json_output: bool = False) -> None:
         candidate = entry.get("candidate", "unknown")
         gates = entry.get("gates", {})
 
-        failed = [
-            (g, gates[g].get("reason", "no reason given"))
-            for g in gate_order
-            if g in gates and not gates[g].get("passed", True)
-        ]
+        # gates is {gate_name: "reason"} — keys are failed gates only
+        failed = [(g, gates[g]) for g in gate_order if g in gates]
 
         print("  \033[33m{}\033[0m  [{}]".format(candidate, ts))
         if failed:
