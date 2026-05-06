@@ -144,11 +144,14 @@ def update_last_observed(entry_id: str, observed_date: Optional[str] = None) -> 
 
 
 def reinforce_entries(entry_ids: list[str]) -> int:
-    """Increment evidence_count and refresh last_observed for a set of entries.
+    """Increment evidence_count, refresh last_observed, and boost confidence for a set of entries.
 
     Loads the index once, updates all matching entries, saves once. Used by
-    sync to credit engrams that were selected for the prism.md push layer —
+    sync to credit engrams that were selected for the prism.md push layer --
     otherwise context-injected engrams decay even while actively in use.
+
+    Confidence is boosted by +0.02 (capped at 0.95), matching `_reinforce_batch`
+    in mcp_server.py so push-layer engrams stay at parity with MCP-queried ones.
 
     Returns the number of entries actually updated.
     """
@@ -162,6 +165,10 @@ def reinforce_entries(entry_ids: list[str]) -> int:
         if e["id"] in id_set:
             e["evidence_count"] = e.get("evidence_count", 0) + 1
             e["last_observed"] = today
+            old_conf = e.get("confidence", 0.5)
+            # Cap at 0.95 -- mirrors _reinforce_batch in mcp_server.py so prism.md
+            # push layer accrues confidence at the same rate as MCP queries
+            e["confidence"] = round(min(0.95, old_conf + 0.02), 3)
             updated += 1
     if updated:
         save_index(index)
