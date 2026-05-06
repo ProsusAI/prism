@@ -61,6 +61,7 @@ Then check what came out:
 ```bash
 prism status              # active engrams grouped by kind, with confidence scores. More details in prism.md
 prism log --extractions   # validation decisions (APPROVED / REJECTED / MODIFIED) and why
+prism log --rejected      # rejected candidates with failing gate reasons
 ```
 
 ### 5. Correct a preference
@@ -112,6 +113,7 @@ prism status                                # show active engrams with confidenc
 ```bash
 prism log --last 20                # recent observations
 prism log --extractions            # extraction validation decisions
+prism log --rejected               # rejected candidates with failing gate reasons
 prism extract                      # run the extraction pipeline
 prism analyze-sessions --last 10   # mine past Claude sessions
 ```

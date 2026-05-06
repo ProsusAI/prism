@@ -18,7 +18,7 @@
 | `prism uninstall [--yes] [--project ID]` | Remove all Prism integration from this project: hook, MCP entry, `.claude/prism.md`, skill symlinks, project data, and `.gitignore` entries. Undoes `prism init`. `~/.prism/` global install and other projects are untouched. Run `prism init` to re-initialize. |
 | `prism maintain` | Run confidence decay cycle; archive engrams below threshold. Runs automatically at session start. |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format (requires confidence ≥ 0.7, evidence ≥ 3) |
-| `prism log [--last N] [--extractions] [--insights] [--json]` | Show recent observations or extraction history |
+| `prism log [--last N] [--extractions] [--insights] [--rejected] [--json]` | Show recent observations or extraction history |
 | `prism config [key [value]]` | Get or set configuration values |
 | `prism registry <subcommand>` | Manage skill registries (see below) |
 
