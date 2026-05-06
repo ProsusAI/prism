@@ -67,6 +67,10 @@ def main() -> None:
     finally:
         os.close(fd)
 
+    # Session-start sentinel: once per project per day, fire prism sync in background
+    # (restores +0.02 confidence-boost parity with MCP-queried engrams; see 260506-g5q)
+    _check_session_sync(prism_home, project_id)
+
     # Trigger checks (background spawns, non-blocking)
     _check_triggers(prism_home, project_id, obs_path, session_id)
 
@@ -222,6 +226,65 @@ def _spawn_background(prism_home: Path, args: list) -> None:
                 start_new_session=True,
             )
     except OSError:
+        pass
+
+
+def _check_session_sync(prism_home: Path, project_id: str) -> None:
+    """Fire `prism sync` once per project per UTC-day.
+
+    Fires sync_claude_code -> reinforce_entries once per project per day, restoring
+    confidence-boost parity with MCP-queried engrams (which get +0.02 per search).
+    See quick task 260506-g5q.
+
+    Sentinel path: /tmp/prism_synced_{project_id}_{YYYYMMDD-UTC}
+
+    Hot path (sentinel exists) is a single os.path.exists() call. On the first call
+    of the day, stale sentinels for this project are cleaned and the spawn is fired.
+    All exceptions are swallowed so capture.py can never crash.
+    """
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        sentinel_name = f"prism_synced_{project_id}_{today}"
+        sentinel_path = f"/tmp/{sentinel_name}"
+
+        # Hot path: single os.path.exists() — no stat, no open, no read.
+        if os.path.exists(sentinel_path):
+            return
+
+        # Slow path (first call of the day for this project).
+        # Clean stale sentinels for THIS project (different date suffix).
+        prefix = f"prism_synced_{project_id}_"
+        try:
+            for entry in os.listdir("/tmp"):
+                if entry.startswith(prefix) and entry != sentinel_name:
+                    try:
+                        os.unlink(f"/tmp/{entry}")
+                    except OSError:
+                        pass
+        except OSError:
+            # /tmp listing failed — skip cleanup silently
+            pass
+
+        # Atomic create: O_CREAT | O_EXCL | O_WRONLY. If another concurrent capture
+        # already created it, FileExistsError is raised — silent return (race lost).
+        try:
+            fd = os.open(
+                sentinel_path,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                0o600,
+            )
+            os.close(fd)
+        except FileExistsError:
+            # Another concurrent capture won the race.
+            return
+        except OSError:
+            # /tmp not writable, full disk, etc. — never crash.
+            return
+
+        # Sentinel created. Fire-and-forget background sync for this project.
+        _spawn_background(prism_home, ["sync", "--project", project_id])
+    except Exception:
+        # Belt-and-suspenders: capture.py must never crash (OBS-05).
         pass
 
 
