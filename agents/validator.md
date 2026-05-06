@@ -93,22 +93,24 @@ What passes:
 
 ## Output
 
-For each candidate, output your decision as a JSON object:
+Output your decisions as a single JSON array. Each element is one decision object covering one candidate:
 
 ```json
-{
-  "candidate_id": "the-entry-id",
-  "decision": "APPROVED|REJECTED|MODIFIED",
-  "gates": {
-    "constitution": {"passed": true|false, "reason": "...if failed"},
-    "evidence": {"passed": true|false, "reason": "...if failed", "observation_count": N},
-    "contradiction": {"passed": true|false, "reason": "...if failed", "checked_against": ["existing-ids"]},
-    "safety": {"passed": true|false, "reason": "...if failed"},
-    "novelty": {"passed": true|false, "reason": "...if failed"}
-  },
-  "modifications": "...if MODIFIED, what was changed",
-  "deprecates": ["existing-ids-to-deprecate"]
-}
+[
+  {
+    "candidate_id": "the-entry-id",
+    "decision": "APPROVED|REJECTED|MODIFIED",
+    "gates": {
+      "constitution": {"passed": true, "reason": "...if failed"},
+      "evidence": {"passed": true, "reason": "...if failed", "observation_count": 0},
+      "contradiction": {"passed": true, "reason": "...if failed", "checked_against": []},
+      "safety": {"passed": true, "reason": "...if failed"},
+      "novelty": {"passed": true, "reason": "...if failed"}
+    },
+    "modifications": "...if MODIFIED, what was changed",
+    "deprecates": ["existing-ids-to-deprecate"]
+  }
+]
 ```
 
 ## Decision Rules
