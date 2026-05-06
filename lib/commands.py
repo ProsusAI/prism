@@ -318,6 +318,29 @@ def cmd_status(project_id: Optional[str] = None) -> None:
         if archived:
             print(f"  Archived: {len(archived)} entries (recoverable)")
 
+    # Recent extraction errors
+    errors_path = PRISM_HOME / "extract_errors.jsonl"
+    if errors_path.exists():
+        try:
+            lines = errors_path.read_text().strip().splitlines()
+            recent = []
+            for line in lines[-5:]:
+                try:
+                    recent.append(json.loads(line))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            if recent:
+                print()
+                print(f"  \033[33mExtraction errors ({len(lines)} total, showing last {len(recent)}):\033[0m")
+                for err in recent:
+                    ts = err.get("timestamp", "")[:19].replace("T", " ")
+                    stage = err.get("stage", "unknown")
+                    reason = err.get("reason", "")
+                    print(f"    {ts}  [{stage}]  {reason}")
+                print(f"  Full log: {errors_path}")
+        except OSError:
+            pass
+
 
 def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project") -> None:
     """Manually teach a fact or preference. Creates with confidence 0.9."""

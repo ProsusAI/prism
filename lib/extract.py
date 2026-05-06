@@ -130,13 +130,17 @@ The project ID is: {project_id}
             cwd=str(PRISM_HOME),
         )
         if result.returncode != 0:
-            print(f"Extraction failed: {result.stderr[:500]}")
+            msg = result.stderr[:500]
+            print(f"Extraction failed: {msg}")
+            _log_extract_error(stage="haiku_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
             return 0
     except FileNotFoundError:
         print("Error: 'claude' CLI not found. Install Claude Code to use extraction.")
+        _log_extract_error(stage="haiku_subprocess", reason="claude CLI not found")
         return 0
     except subprocess.TimeoutExpired:
         print("Extraction timed out (120s limit).")
+        _log_extract_error(stage="haiku_subprocess", reason="timeout after 300s")
         return 0
 
     # Count candidates created
@@ -200,13 +204,17 @@ After outputting the JSON array:
             cwd=str(PRISM_HOME),
         )
         if result.returncode != 0:
-            print(f"Validation failed: {result.stderr[:500]}")
+            msg = result.stderr[:500]
+            print(f"Validation failed: {msg}")
+            _log_extract_error(stage="sonnet_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
             return {"approved": 0, "rejected": 0, "modified": 0}
     except FileNotFoundError:
         print("Error: 'claude' CLI not found.")
+        _log_extract_error(stage="sonnet_subprocess", reason="claude CLI not found")
         return {"approved": 0, "rejected": 0, "modified": 0}
     except subprocess.TimeoutExpired:
         print("Validation timed out (300s limit).")
+        _log_extract_error(stage="sonnet_subprocess", reason="timeout after 300s")
         return {"approved": 0, "rejected": 0, "modified": 0}
 
     # Parse validation results from output
@@ -281,15 +289,37 @@ def _parse_validation_output(output: str, project_id: str) -> dict:
                     results["rejected"] += 1
                 results["decisions"].append(d)
 
-    except (json.JSONDecodeError, KeyError):
-        # If we can't parse, count files that ended up in entries dir
+    except (json.JSONDecodeError, KeyError) as exc:
+        # Total parse failure — count any files Sonnet moved to entries dir
+        # and log a structured error so prism status can surface it.
         engrams_dir = get_engrams_dir(project_id)
         results["approved"] = len(list(engrams_dir.glob("*.md")))
+        _log_extract_error(
+            stage="validation_parse",
+            reason=str(exc),
+            raw_output=output,
+        )
 
     # Log validation results
     _log_validation(results["decisions"])
 
     return results
+
+
+def _log_extract_error(stage: str, reason: str, raw_output: str = "") -> None:
+    """Append a structured error record to extract_errors.jsonl."""
+    log_path = PRISM_HOME / "extract_errors.jsonl"
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "stage": stage,
+        "reason": reason,
+        "raw_output_snippet": raw_output[:500],
+    }
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
 
 
 def _apply_validation_results(project_id: str, results: dict, rotate: bool = True) -> None:
