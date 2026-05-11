@@ -395,49 +395,89 @@ def cmd_registry_create() -> None:
         print(f"\033[31mInvalid name '{name}'. Use kebab-case: [a-z0-9][a-z0-9-]*[a-z0-9]\033[0m")
         return
 
-    # Step 2: GitHub org/repo
-    org_repo = input("GitHub org/repo (e.g., acme/skill-registry): ").strip()
+    # Step 2: Backend provider
+    provider = input("Backend provider [github/gitlab] (default: github): ").strip().lower() or "github"
+    if provider not in ("github", "gitlab"):
+        print(f"\033[31mUnknown provider '{provider}'. Choose 'github' or 'gitlab'.\033[0m")
+        return
+
+    # Step 3: org/repo (or group/project) path
+    if provider == "github":
+        org_repo = input("GitHub org/repo (e.g., acme/skill-registry): ").strip()
+    else:
+        org_repo = input("GitLab group/project path (e.g., acme/skill-registry): ").strip()
     if not org_repo or "/" not in org_repo:
         print("\033[31mPlease provide org/repo format (e.g., acme/skill-registry).\033[0m")
         return
 
     repo_name = org_repo.split("/")[-1]
 
-    # Step 3: Check gh CLI
-    try:
-        result = subprocess.run(
-            ["gh", "auth", "status"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode != 0:
-            print("\033[33mWarning: gh CLI not authenticated. Run 'gh auth login' first.\033[0m")
-            print("You can continue and create the repo manually.")
-    except FileNotFoundError:
-        print("\033[33mWarning: gh CLI not found. Install it from https://cli.github.com/\033[0m")
-        print("You can continue and create the repo manually on GitHub.")
-    except subprocess.TimeoutExpired:
-        print("\033[33mWarning: gh CLI timed out.\033[0m")
+    if provider == "github":
+        # Step 4: Check gh CLI
+        try:
+            result = subprocess.run(
+                ["gh", "auth", "status"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                print("\033[33mWarning: gh CLI not authenticated. Run 'gh auth login' first.\033[0m")
+                print("You can continue and create the repo manually.")
+        except FileNotFoundError:
+            print("\033[33mWarning: gh CLI not found. Install it from https://cli.github.com/\033[0m")
+            print("You can continue and create the repo manually on GitHub.")
+        except subprocess.TimeoutExpired:
+            print("\033[33mWarning: gh CLI timed out.\033[0m")
 
-    # Step 4: Create repo
-    print(f"\nCreating GitHub repo: {org_repo}...")
-    try:
-        result = subprocess.run(
-            ["gh", "repo", "create", org_repo, "--private", "--confirm"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode == 0:
-            print(f"\033[32mRepo created: https://github.com/{org_repo}\033[0m")
-        else:
-            print(f"\033[33mCould not create repo automatically: {result.stderr.strip()}\033[0m")
-            print(f"Create it manually at: https://github.com/new")
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        print("\033[33mCould not create repo. Create it manually at: https://github.com/new\033[0m")
+        # Step 5: Create repo
+        print(f"\nCreating GitHub repo: {org_repo}...")
+        try:
+            result = subprocess.run(
+                ["gh", "repo", "create", org_repo, "--private", "--confirm"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                print(f"\033[32mRepo created: https://github.com/{org_repo}\033[0m")
+            else:
+                print(f"\033[33mCould not create repo automatically: {result.stderr.strip()}\033[0m")
+                print(f"Create it manually at: https://github.com/new")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            print("\033[33mCould not create repo. Create it manually at: https://github.com/new\033[0m")
+    else:
+        # GitLab: check glab CLI is available
+        try:
+            result = subprocess.run(
+                ["glab", "auth", "status"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                print("\033[33mWarning: glab CLI not authenticated. Run 'glab auth login' first.\033[0m")
+                print("You can continue and create the project manually.")
+        except FileNotFoundError:
+            print("\033[33mWarning: glab CLI not found. Install it from https://gitlab.com/gitlab-org/cli\033[0m")
+            print("You can continue and create the project manually on GitLab.")
+        except subprocess.TimeoutExpired:
+            print("\033[33mWarning: glab CLI timed out.\033[0m")
 
-    # Step 5: Generate token
+        print(f"\nCreating GitLab project: {org_repo}...")
+        try:
+            result = subprocess.run(
+                ["glab", "repo", "create", org_repo, "--private"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                print(f"\033[32mProject created: https://gitlab.com/{org_repo}\033[0m")
+            else:
+                print(f"\033[33mCould not create project automatically: {result.stderr.strip()}\033[0m")
+                print(f"Create it manually at: https://gitlab.com/projects/new")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            print("\033[33mCould not create project. Create it manually at: https://gitlab.com/projects/new\033[0m")
+
+    # Step 6: Generate token
     generated_token = generate_token()
 
-    # Step 6: Print setup instructions
-    print(f"""
+    # Step 7: Print setup instructions
+    if provider == "github":
+        print(f"""
 \033[1mNext steps:\033[0m
 
   1. Clone your new repo:
@@ -464,14 +504,47 @@ def cmd_registry_create() -> None:
   6. Commit and push:
      git add . && git commit -m "Initial registry setup" && git push
 """)
+    else:
+        print(f"""
+\033[1mNext steps (GitLab):\033[0m
 
-    # Step 7: Auto-add registry locally
+  1. Clone your new project:
+     git clone https://gitlab.com/{org_repo}.git
+     cd {repo_name}
+
+  2. Copy the registry template:
+     cp -r ~/.prism/templates/registry/* .
+     mkdir -p skills
+     cp ci/gitlab-ci.yml .gitlab-ci.yml
+
+  3. Install and deploy the Worker:
+     cd worker && npm install && npm run deploy
+
+  4. Set Worker secrets:
+     npx wrangler secret put GITLAB_TOKEN
+     (paste your GitLab Personal Access Token with 'api' scope)
+     npx wrangler secret put REGISTRY_TOKENS
+     (paste: {generated_token})
+
+  5. Update wrangler.toml:
+     - Set GIT_PROVIDER = "gitlab"
+     - Set GITLAB_HOST, GITLAB_PROJECT_ID, GITLAB_BRANCH
+
+  6. Add a project access token for CI:
+     Project Settings -> Access Tokens -> create token with `write_repository`
+     Settings -> CI/CD -> Variables -> add REGISTRY_PUSH_TOKEN (masked, protected)
+
+  7. Commit and push:
+     git add . && git commit -m "Initial registry setup" && git push
+""")
+
+    # Step 8: Auto-add registry locally
     try:
         add_registry(name, f"https://{name}.workers.dev", generated_token)
     except ValueError as e:
         print(f"\033[33mNote: {e}\033[0m")
 
-    # Step 8: Summary
+    # Step 9: Summary
     print(f"\033[32mRegistry '{name}' configured locally.\033[0m")
     print(f"  URL:   https://{name}.workers.dev")
     print(f"  Token: {generated_token[:8]}...")
