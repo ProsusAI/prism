@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 Phase: 05
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-05-06 - Completed quick task 260506-gf6: session-start sentinel in capture.py for prism.md reinforcement
+Last activity: 2026-05-11 - Completed quick task 260511-fyh: Add GitLab registry backend support alongside GitHub
 
 Progress: ██████████ 100%
 
@@ -113,6 +113,7 @@ None yet.
 | 260506-f25 | Fix validation parse failure in extract.py and validator.md | 2026-05-06 | ab418b1 | [260506-f25-fix-validation-parse-failure-in-extract-](./quick/260506-f25-fix-validation-parse-failure-in-extract-/) |
 | 260506-g5q | reinforce_entries confidence boost parity with MCP | 2026-05-06 | 18998aa | [260506-g5q-reinforce-entries-confidence-boost-parit](./quick/260506-g5q-reinforce-entries-confidence-boost-parit/) |
 | 260506-gf6 | session-start sentinel in capture.py for prism.md reinforcement | 2026-05-06 | 2ebd3be | [260506-gf6-session-start-sentinel-in-capture-py-for](./quick/260506-gf6-session-start-sentinel-in-capture-py-for/) |
+| 260511-fyh | Add GitLab registry backend support alongside GitHub | 2026-05-11 | 8be3e2a | [260511-fyh-add-gitlab-registry-backend-support-alon](./quick/260511-fyh-add-gitlab-registry-backend-support-alon/) |
 
 ### Blockers/Concerns
 
