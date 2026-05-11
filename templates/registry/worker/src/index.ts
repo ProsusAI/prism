@@ -1,21 +1,33 @@
 /**
  * Prism Registry API -- Cloudflare Worker
  *
- * Acts as a proxy between Prism clients and a private GitHub registry repo.
+ * Acts as a proxy between Prism clients and a private GitHub or GitLab registry repo.
  * Clients authenticate with Bearer tokens (REGISTRY_TOKENS secret).
- * The Worker uses a GitHub PAT (GH_TOKEN) to read/write the repo.
+ * The Worker uses a GitHub PAT (GH_TOKEN) or GitLab PAT (GITLAB_TOKEN) to read/write
+ * the repo. The backend is selected via GIT_PROVIDER (default: "github").
  *
- * READ:  Client calls GET endpoints -> Worker fetches from GitHub -> returns to client
+ * READ:  Client calls GET endpoints -> Worker fetches from provider -> returns to client
  * WRITE: Client POSTs skills -> Worker validates, creates branch, commits all files,
- *        opens PR on registry repo -> GitHub Actions runs scripts/validate.py
+ *        opens PR/MR on registry repo -> CI runs scripts/validate.py
  */
 
 export interface Env {
-  GH_TOKEN: string;           // GitHub PAT with repo scope
   REGISTRY_TOKENS: string;    // Comma-separated list of valid API tokens
-  GH_OWNER: string;           // GitHub org, e.g. "my-org"
-  GH_REPO: string;            // Registry repo name
-  GH_BRANCH: string;          // Branch to read from, e.g. "main"
+
+  // Provider selection: "github" (default) or "gitlab"
+  GIT_PROVIDER?: "github" | "gitlab";
+
+  // GitHub backend (required when GIT_PROVIDER === "github" or unset)
+  GH_TOKEN?: string;           // GitHub PAT with repo scope
+  GH_OWNER?: string;           // GitHub org, e.g. "my-org"
+  GH_REPO?: string;            // Registry repo name
+  GH_BRANCH?: string;          // Branch to read from, e.g. "main"
+
+  // GitLab backend (required when GIT_PROVIDER === "gitlab")
+  GITLAB_HOST?: string;        // e.g. "https://gitlab.com" or self-hosted base URL
+  GITLAB_PROJECT_ID?: string;  // numeric ID or URL-encoded "group/repo"
+  GITLAB_BRANCH?: string;      // default branch name, e.g. "main"
+  GITLAB_TOKEN?: string;       // PAT with api scope
 }
 
 // ---------------------------------------------------------------------------
@@ -78,118 +90,268 @@ async function computeETag(content: string): Promise<string> {
   return `"${hashHex}"`;
 }
 
-/** Fetch a raw file from the private GitHub repo */
-async function fetchFromGitHub(
-  env: Env,
-  path: string
-): Promise<Response> {
-  const url = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}/contents/${path}?ref=${env.GH_BRANCH}`;
+// ---------------------------------------------------------------------------
+// Registry provider abstraction
+// ---------------------------------------------------------------------------
 
-  return fetch(url, {
-    headers: {
-      Authorization: `Bearer ${env.GH_TOKEN}`,
-      Accept: "application/vnd.github.raw+json",
-      "User-Agent": "Prism-Worker/1.0",
-    },
-  });
+interface RegistryFile {
+  path: string;
+  content: string;
+}
+
+interface RegistryProvider {
+  /**
+   * Read a single file from the registry repo. Returns the underlying Fetch
+   * Response so headers like ETag pass through; non-2xx responses are returned
+   * as-is for the caller to inspect.
+   */
+  fetchFile(path: string): Promise<Response>;
+
+  /**
+   * Atomic batch operation: create a branch, write all files in a single
+   * commit, then open a PR/MR. Returns a 201-shaped JSON Response on success,
+   * or a 500 JSON error Response on API failure.
+   */
+  createPullRequest(
+    files: RegistryFile[],
+    title: string,
+    description: string
+  ): Promise<Response>;
 }
 
 // ---------------------------------------------------------------------------
-// GitHub Git API: create branch -> commit all files -> open PR (single commit)
+// GitHub provider: Git API -> create branch -> commit all files -> open PR
 // ---------------------------------------------------------------------------
 
-async function createPullRequest(
-  env: Env,
-  branchLabel: string,
-  files: { path: string; content: string }[],
-  title: string,
-  description: string
-): Promise<Response> {
-  const branchName = `prism/publish-${Date.now()}`;
-  const ghApi = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}`;
-  const headers = {
-    Authorization: `Bearer ${env.GH_TOKEN}`,
-    Accept: "application/vnd.github+json",
-    "User-Agent": "Prism-Worker/1.0",
-    "Content-Type": "application/json",
-  };
+class GitHubProvider implements RegistryProvider {
+  private readonly owner: string;
+  private readonly repo: string;
+  private readonly branch: string;
+  private readonly token: string;
 
-  async function ghFetch(url: string, opts?: RequestInit) {
-    const resp = await fetch(url, { headers, ...opts });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`GitHub API error (${resp.status}): ${err}`);
-    }
-    return resp.json() as Promise<any>;
+  constructor(env: Env) {
+    if (!env.GH_OWNER) throw new Error("GitHub provider missing required env var: GH_OWNER");
+    if (!env.GH_REPO) throw new Error("GitHub provider missing required env var: GH_REPO");
+    if (!env.GH_BRANCH) throw new Error("GitHub provider missing required env var: GH_BRANCH");
+    if (!env.GH_TOKEN) throw new Error("GitHub provider missing required env var: GH_TOKEN");
+    this.owner = env.GH_OWNER;
+    this.repo = env.GH_REPO;
+    this.branch = env.GH_BRANCH;
+    this.token = env.GH_TOKEN;
   }
 
-  try {
-    // 1. Get the latest commit on the base branch
-    const refData = await ghFetch(`${ghApi}/git/ref/heads/${env.GH_BRANCH}`);
-    const baseCommitSha = refData.object.sha;
+  /** Fetch a raw file from the private GitHub repo */
+  async fetchFile(path: string): Promise<Response> {
+    const url = `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${path}?ref=${this.branch}`;
 
-    // 2. Get its tree SHA
-    const commitData = await ghFetch(`${ghApi}/git/commits/${baseCommitSha}`);
-    const baseTreeSha = commitData.tree.sha;
+    return fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Accept: "application/vnd.github.raw+json",
+        "User-Agent": "Prism-Worker/1.0",
+      },
+    });
+  }
 
-    // 3. Create blobs for every file
-    const treeEntries = [];
-    for (const file of files) {
-      const blobData = await ghFetch(`${ghApi}/git/blobs`, {
+  async createPullRequest(
+    files: RegistryFile[],
+    title: string,
+    description: string
+  ): Promise<Response> {
+    const branchName = `prism/publish-${Date.now()}`;
+    const ghApi = `https://api.github.com/repos/${this.owner}/${this.repo}`;
+    const headers = {
+      Authorization: `Bearer ${this.token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "Prism-Worker/1.0",
+      "Content-Type": "application/json",
+    };
+
+    async function ghFetch(url: string, opts?: RequestInit) {
+      const resp = await fetch(url, { headers, ...opts });
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`GitHub API error (${resp.status}): ${err}`);
+      }
+      return resp.json() as Promise<any>;
+    }
+
+    try {
+      // 1. Get the latest commit on the base branch
+      const refData = await ghFetch(`${ghApi}/git/ref/heads/${this.branch}`);
+      const baseCommitSha = refData.object.sha;
+
+      // 2. Get its tree SHA
+      const commitData = await ghFetch(`${ghApi}/git/commits/${baseCommitSha}`);
+      const baseTreeSha = commitData.tree.sha;
+
+      // 3. Create blobs for every file
+      const treeEntries = [];
+      for (const file of files) {
+        const blobData = await ghFetch(`${ghApi}/git/blobs`, {
+          method: "POST",
+          body: JSON.stringify({ content: file.content, encoding: "utf-8" }),
+        });
+        treeEntries.push({
+          path: file.path,
+          mode: "100644",
+          type: "blob",
+          sha: blobData.sha,
+        });
+      }
+
+      // 4. Create a single tree containing all files
+      const treeData = await ghFetch(`${ghApi}/git/trees`, {
         method: "POST",
-        body: JSON.stringify({ content: file.content, encoding: "utf-8" }),
+        body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
       });
-      treeEntries.push({
-        path: file.path,
-        mode: "100644",
-        type: "blob",
-        sha: blobData.sha,
+
+      // 5. One atomic commit
+      const newCommit = await ghFetch(`${ghApi}/git/commits`, {
+        method: "POST",
+        body: JSON.stringify({
+          message: title,
+          tree: treeData.sha,
+          parents: [baseCommitSha],
+        }),
       });
+
+      // 6. Create the branch
+      await ghFetch(`${ghApi}/git/refs`, {
+        method: "POST",
+        body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: newCommit.sha }),
+      });
+
+      // 7. Open the PR
+      const prData = await ghFetch(`${ghApi}/pulls`, {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          body: description,
+          head: branchName,
+          base: this.branch,
+        }),
+      });
+
+      return json({
+        message: "Skills submitted successfully",
+        pr_url: prData.html_url,
+        branch: branchName,
+        files_count: files.length,
+      }, 201);
+
+    } catch (err: any) {
+      return json({ error: err.message || "Failed to create PR" }, 500);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GitLab provider: REST API v4 -> single-commit branch creation + open MR
+// ---------------------------------------------------------------------------
+
+class GitLabProvider implements RegistryProvider {
+  private readonly host: string;
+  private readonly projectId: string;
+  private readonly branch: string;
+  private readonly token: string;
+
+  constructor(env: Env) {
+    if (!env.GITLAB_HOST) throw new Error("GitLab provider missing required env var: GITLAB_HOST");
+    if (!env.GITLAB_PROJECT_ID) throw new Error("GitLab provider missing required env var: GITLAB_PROJECT_ID");
+    if (!env.GITLAB_BRANCH) throw new Error("GitLab provider missing required env var: GITLAB_BRANCH");
+    if (!env.GITLAB_TOKEN) throw new Error("GitLab provider missing required env var: GITLAB_TOKEN");
+    this.host = env.GITLAB_HOST.replace(/\/+$/, "");
+    this.projectId = env.GITLAB_PROJECT_ID;
+    this.branch = env.GITLAB_BRANCH;
+    this.token = env.GITLAB_TOKEN;
+  }
+
+  async fetchFile(path: string): Promise<Response> {
+    const encodedProject = encodeURIComponent(this.projectId);
+    const encodedPath = encodeURIComponent(path);
+    const url = `${this.host}/api/v4/projects/${encodedProject}/repository/files/${encodedPath}/raw?ref=${encodeURIComponent(this.branch)}`;
+
+    return fetch(url, {
+      headers: {
+        "PRIVATE-TOKEN": this.token,
+        "User-Agent": "Prism-Worker/1.0",
+      },
+    });
+  }
+
+  async createPullRequest(
+    files: RegistryFile[],
+    title: string,
+    description: string
+  ): Promise<Response> {
+    const branchName = `prism/publish-${Date.now()}`;
+    const encodedProject = encodeURIComponent(this.projectId);
+    const apiBase = `${this.host}/api/v4/projects/${encodedProject}`;
+    const headers = {
+      "PRIVATE-TOKEN": this.token,
+      "User-Agent": "Prism-Worker/1.0",
+      "Content-Type": "application/json",
+    };
+
+    async function glFetch(url: string, opts?: RequestInit) {
+      const resp = await fetch(url, { headers, ...opts });
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`GitLab API error (${resp.status}): ${err}`);
+      }
+      return resp.json() as Promise<any>;
     }
 
-    // 4. Create a single tree containing all files
-    const treeData = await ghFetch(`${ghApi}/git/trees`, {
-      method: "POST",
-      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
-    });
+    try {
+      // 1. Single atomic commit: create branch + commit all files in one call
+      await glFetch(`${apiBase}/repository/commits`, {
+        method: "POST",
+        body: JSON.stringify({
+          branch: branchName,
+          start_branch: this.branch,
+          commit_message: title,
+          actions: files.map((f) => ({
+            action: "create",
+            file_path: f.path,
+            content: f.content,
+          })),
+        }),
+      });
 
-    // 5. One atomic commit
-    const newCommit = await ghFetch(`${ghApi}/git/commits`, {
-      method: "POST",
-      body: JSON.stringify({
-        message: title,
-        tree: treeData.sha,
-        parents: [baseCommitSha],
-      }),
-    });
+      // 2. Open the merge request
+      const mr = await glFetch(`${apiBase}/merge_requests`, {
+        method: "POST",
+        body: JSON.stringify({
+          source_branch: branchName,
+          target_branch: this.branch,
+          title,
+          description,
+        }),
+      });
 
-    // 6. Create the branch
-    await ghFetch(`${ghApi}/git/refs`, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: newCommit.sha }),
-    });
+      return json({
+        message: "Skills submitted successfully",
+        pr_url: mr.web_url,
+        branch: branchName,
+        files_count: files.length,
+      }, 201);
 
-    // 7. Open the PR
-    const prData = await ghFetch(`${ghApi}/pulls`, {
-      method: "POST",
-      body: JSON.stringify({
-        title,
-        body: description,
-        head: branchName,
-        base: env.GH_BRANCH,
-      }),
-    });
-
-    return json({
-      message: "Skills submitted successfully",
-      pr_url: prData.html_url,
-      branch: branchName,
-      files_count: files.length,
-    }, 201);
-
-  } catch (err: any) {
-    return json({ error: err.message || "Failed to create PR" }, 500);
+    } catch (err: any) {
+      return json({ error: err.message || "Failed to create MR" }, 500);
+    }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Provider factory
+// ---------------------------------------------------------------------------
+
+function getProvider(env: Env): RegistryProvider {
+  const which = (env.GIT_PROVIDER || "github").toLowerCase();
+  if (which === "gitlab") return new GitLabProvider(env);
+  if (which === "github") return new GitHubProvider(env);
+  throw new Error(`Unsupported GIT_PROVIDER: ${which}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,9 +468,18 @@ export default {
       return unauthorized();
     }
 
+    // Resolve provider once per request. A misconfiguration here surfaces as 500
+    // rather than crashing the Worker.
+    let provider: RegistryProvider;
+    try {
+      provider = getProvider(env);
+    } catch (e: any) {
+      return json({ error: e.message || "Provider configuration error" }, 500);
+    }
+
     // GET /registry OR /api/skills/registry -- returns skill-registry.json
     if ((path === "/registry" || path === "/api/skills/registry") && request.method === "GET") {
-      const resp = await fetchFromGitHub(env, "skill-registry.json");
+      const resp = await provider.fetchFile("skill-registry.json");
       if (!resp.ok) return json({ error: "Failed to fetch registry" }, resp.status);
       const body = await resp.text();
       const etag = await computeETag(body);
@@ -338,7 +509,7 @@ export default {
       const skillName = path.replace("/api/skills/", "").replace(/\/$/, "");
       if (!skillName || skillName.includes("/")) return badRequest("Skill name required");
       // Search across all repo directories for this skill name
-      const resp = await fetchFromGitHub(env, `skills`);
+      const resp = await provider.fetchFile("skills");
       // Fallback: try direct name lookup assuming flat structure is unlikely,
       // the client should use the registry index to find the full path.
       // For now, return a helpful error.
@@ -360,7 +531,7 @@ export default {
         return badRequest("File access restricted to skills/ directory");
       }
 
-      const resp = await fetchFromGitHub(env, filePath);
+      const resp = await provider.fetchFile(filePath);
       if (!resp.ok) return json({ error: `File not found: ${filePath}` }, 404);
       const body = await resp.text();
       const ct = filePath.endsWith(".json") ? "application/json"
@@ -400,7 +571,7 @@ export default {
     //   skills/{repository}/{skill_name}/plugin.json
     //   skills/{repository}/{skill_name}/SKILL.md
     //
-    // One branch, one commit, one PR.
+    // One branch, one commit, one PR/MR (provider-agnostic).
     // ------------------------------------------------------------------
     if (path === "/api/skills/publish" && request.method === "POST") {
       let body: any;
@@ -444,7 +615,7 @@ export default {
       const description = data.description
         || `Automated publish of ${skills.length} skill(s) from **${repository}**:\n\n${skillNames.map((n) => `- ${n}`).join("\n")}`;
 
-      return createPullRequest(env, repository, files, title, description);
+      return provider.createPullRequest(files, title, description);
     }
 
     return json({ error: "Not found" }, 404);

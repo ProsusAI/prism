@@ -1,0 +1,57 @@
+# GitLab CI pipeline for a Prism skill registry repo.
+# Place this file at the repo root as `.gitlab-ci.yml`.
+#
+# Mirrors GitHub Actions workflows:
+#   - validate.yml          -> stage: validate
+#   - build-registry.yml    -> stage: build_registry (default branch only)
+#
+# Required CI/CD variables (Settings -> CI/CD -> Variables):
+#   REGISTRY_PUSH_TOKEN - Project access token with `write_repository` scope,
+#                         masked + protected. Used by build_registry to push
+#                         the updated skill-registry.json back to the default
+#                         branch.
+
+stages:
+  - validate
+  - build_registry
+
+default:
+  image: python:3.12-slim
+
+validate_skills:
+  stage: validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - skills/**/*
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - skills/**/*
+  script:
+    - set -euo pipefail
+    - pip install -q jsonschema
+    - python scripts/validate.py
+
+build_registry:
+  stage: build_registry
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  needs:
+    - validate_skills
+  variables:
+    GIT_STRATEGY: clone
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git
+    - git config user.name "gitlab-ci"
+    - git config user.email "ci@gitlab"
+  script:
+    - set -euo pipefail
+    - python scripts/build_registry.py
+    - git add skill-registry.json
+    - |
+      if git diff --staged --quiet; then
+        echo "No registry changes"
+        exit 0
+      fi
+    - git commit -m "Update skill-registry.json"
+    - git push "https://oauth2:${REGISTRY_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD:${CI_DEFAULT_BRANCH}

@@ -2,6 +2,10 @@ name = "prism-registry"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
 
+# Provider selection: "github" (default) or "gitlab"
+# GIT_PROVIDER = "github"
+
+# --- GitHub backend (default) ---
 # These are set via `wrangler secret put` -- NOT here
 # GH_TOKEN = "your github pat"
 # REGISTRY_TOKENS = "token1,token2,token3"
@@ -10,3 +14,10 @@ compatibility_date = "2026-04-01"
 GH_OWNER = "YOUR_GITHUB_ORG"
 GH_REPO = "YOUR_REGISTRY_REPO"
 GH_BRANCH = "main"
+
+# --- GitLab backend (uncomment and set GIT_PROVIDER above to "gitlab") ---
+# Required when GIT_PROVIDER = "gitlab":
+# GITLAB_HOST       = "https://gitlab.com"   # or your self-hosted URL
+# GITLAB_PROJECT_ID = "group/repo"           # or numeric project ID
+# GITLAB_BRANCH     = "main"
+# GITLAB_TOKEN is set via `wrangler secret put GITLAB_TOKEN`
