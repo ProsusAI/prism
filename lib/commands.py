@@ -174,6 +174,11 @@ def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
     settings["hooks"] = hooks
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
+    # Remove legacy prism.md from cursor rules (migrated to prism.mdc)
+    legacy = cursor_dir / "rules" / "prism.md"
+    if legacy.exists():
+        legacy.unlink()
+
     cursor_mcp_path = Path.home() / ".cursor" / "mcp.json"
     cursor_mcp_path.parent.mkdir(parents=True, exist_ok=True)
     data = {}
