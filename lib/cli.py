@@ -114,6 +114,12 @@ def main() -> None:
                             help="List available sessions and counts")
     p_sessions.add_argument("--since", help="Only analyze sessions after DATE (YYYY-MM-DD)")
     p_sessions.add_argument("--last", type=int, help="Only analyze last N sessions")
+    p_sessions.add_argument(
+        "--source",
+        choices=["claude", "cursor", "all"],
+        default="all",
+        help="Session source to analyze: claude (Claude Code), cursor (Cursor IDE), or all (default)"
+    )
     p_sessions.add_argument("--project", help="Override project ID")
     p_sessions.add_argument("--force", action="store_true",
                             help="Re-analyze sessions even if already processed")
@@ -275,10 +281,16 @@ def main() -> None:
 
 def _cmd_query_sessions(args, project_id: str) -> None:
     """Search session content via SQLite FTS5."""
-    from .sessions import list_sessions
+    from .sessions import list_all_sessions, list_cursor_sessions, list_sessions
     from .search import search_sessions
 
-    sessions = list_sessions(
+    list_func = {
+        "claude": list_sessions,
+        "cursor": list_cursor_sessions,
+        "all": list_all_sessions,
+    }.get(args.source, list_all_sessions)
+
+    sessions = list_func(
         project_filter=None if args.all_projects else project_id,
         since_date=args.since,
         last_n=args.last,
@@ -306,7 +318,7 @@ def _cmd_query_sessions(args, project_id: str) -> None:
 
 def _cmd_analyze_sessions(args) -> None:
     """Analyze existing Claude Code session transcripts."""
-    from .sessions import list_sessions, analyze_all_sessions
+    from .sessions import analyze_all_sessions, list_all_sessions, list_cursor_sessions, list_sessions
 
     project_id = args.project
     if not project_id and not args.all_projects:
@@ -318,7 +330,12 @@ def _cmd_analyze_sessions(args) -> None:
         return
 
     if args.list_sessions:
-        sessions = list_sessions(
+        list_func = {
+            "claude": list_sessions,
+            "cursor": list_cursor_sessions,
+            "all": list_all_sessions,
+        }.get(args.source, list_all_sessions)
+        sessions = list_func(
             project_filter=None if args.all_projects else project_id,
             since_date=args.since,
             last_n=args.last,
@@ -355,6 +372,7 @@ def _cmd_analyze_sessions(args) -> None:
         since_date=args.since,
         last_n=args.last,
         force=getattr(args, "force", False),
+        source=args.source,
     )
 
     print("\nSummary:")

@@ -1,12 +1,12 @@
 # Prism
 
-A knowledge layer for Claude Code. Prism watches how you work, learns your preferences, and makes Claude remember them across sessions. For teams, it lets you share proven architectural knowledge through a shared registry.
+A knowledge layer for Claude Code adn Cursor. Prism watches how you work, learns your preferences, and makes Claude/Cursor remember them across sessions. For teams, it lets you share proven architectural knowledge through a shared registry.
 
 **One install. Zero config for personal use. Registry config for teams.**
 
 ## What it does
 
-**Personal learning** — Prism observes your Claude Code sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" — living knowledge units that strengthen with evidence and decay without use.
+**Personal learning** — Prism observes your sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" — living knowledge units that strengthen with evidence and decay without use.
 
 **Team knowledge** — Promote your best engrams into publishable skills, or run slash commands to mine your codebase and git history for architectural patterns. Publish them to a team registry so everyone benefits.
 
@@ -21,7 +21,7 @@ git clone https://github.com/ProsusAI/prism.git && cd prism
 ./install.sh
 ```
 
-Requirements: Python 3.12+, git, [Claude Code](https://claude.ai/code). The installer creates `~/.prism/` and symlinks the `prism` CLI to `~/.local/bin/prism`. Safe to re-run on upgrades.
+Requirements: Python 3.12+, git, [Claude Code](https://claude.ai/code) or [Cursor](https://cursor.com). The installer creates `~/.prism/` and symlinks the `prism` CLI to `~/.local/bin/prism`. Safe to re-run on upgrades.
 
 **Check:** `prism --help` prints usage. If you get "command not found", add `~/.local/bin` to your PATH — the installer will have warned you if it's missing.
 

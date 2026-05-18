@@ -1,6 +1,6 @@
 ---
 name: mine-design
-description: "Extract design decisions, trade-offs, and non-obvious behaviors from a codebase's current source code. TRIGGER when: starting the design analysis pipeline, running /mine-design before /synthesize-decisions, capturing the reasoning behind current architectural choices, analyzing a codebase snapshot for patterns that would surprise a developer arriving cold."
+description: "Extract design decisions, trade-offs, and non-obvious behaviors from a codebase's current source code. TRIGGER when: starting the design analysis pipeline, running `/mine-design` (Claude Code) or `@mine-design` (Cursor) before `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor), capturing the reasoning behind current architectural choices, analyzing a codebase snapshot for patterns that would surprise a developer arriving cold."
 ---
 
 ## When to use this skill
@@ -254,5 +254,5 @@ Omit this section entirely if Phase 3c found none.
 After writing, tell the developer:
 - How many decisions, trade-offs, non-obvious behaviors, and structural anti-patterns were found
 - Which subsystems had the highest decision density
-- Which findings are `[technology]`-scoped and may be worth feeding into `/synthesize`
-- How many assembled patterns were found in Phase 3c, and their names — these are strong `/synthesize` candidates and should be promoted as units, not as individual findings
+- Which findings are `[technology]`-scoped and may be worth feeding into `/synthesize` (Claude Code) or `@synthesize` (Cursor)
+- How many assembled patterns were found in Phase 3c, and their names — these are strong `/synthesize` (Claude Code) or `@synthesize` (Cursor) candidates and should be promoted as units, not as individual findings

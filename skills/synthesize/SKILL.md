@@ -1,6 +1,6 @@
 ---
 name: synthesize
-description: "Promote qualifying incident clusters from git history into reusable practice skills. TRIGGER when: _analysis/incidents.md exists and is ready to promote, running /synthesize after /mine-history, extracting failure-mode practices from a mined repository."
+description: "Promote qualifying incident clusters from git history into reusable practice skills. TRIGGER when: _analysis/incidents.md exists and is ready to promote, running `/synthesize` (Claude Code) or `@synthesize` (Cursor) after `/mine-history` (Claude Code) or `@mine-history` (Cursor), extracting failure-mode practices from a mined repository."
 ---
 
 ## When to use this skill
@@ -15,15 +15,15 @@ Read `_analysis/incidents.md`. This is the required input.
 
 If it doesn't exist, stop and tell the developer:
 
-> "`_analysis/incidents.md` not found. Run `/mine-history` first to extract incident clusters from your git history."
+> "`_analysis/incidents.md` not found. Run `/mine-history` (Claude Code) or `@mine-history` (Cursor) first to extract incident clusters from your git history."
 
 Read the file fully. Note each cluster: its name, the directives/findings listed, their dates, and its current status line.
 
 Also check for `_analysis/design.md`. If it exists, read it fully. Note **all** findings — both `[technology]`-tagged and `[codebase]`-tagged — recording each one's subsystem, category (decision / non-obvious behavior / structural anti-pattern), and the technology or pattern it concerns. Do not skip `[codebase]`-tagged findings at this stage. If design.md doesn't exist, continue without it.
 
-Pay particular attention to the `## Architectural patterns` section of design.md, if present. These are pre-assembled cross-subsystem patterns from Phase 3c of `/mine-design`. Treat them as first-class candidates with their own promotion path and key-decisions output format (see Step 3 and Step 5).
+Pay particular attention to the `## Architectural patterns` section of design.md, if present. These are pre-assembled cross-subsystem patterns from Phase 3c of `/mine-design` (Claude Code) or `@mine-design` (Cursor). Treat them as first-class candidates with their own promotion path and key-decisions output format (see Step 3 and Step 5).
 
-Individual design seeds that don't reach the assembled-pattern threshold may be better candidates for `/synthesize-decisions`. Flag them as such rather than marking them "too thin".
+Individual design seeds that don't reach the assembled-pattern threshold may be better candidates for `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor). Flag them as such rather than marking them "too thin".
 
 ---
 

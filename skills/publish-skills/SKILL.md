@@ -5,11 +5,11 @@ description: Publish changed skills from _analysis/extracted_skills_codebase/ an
 
 ## When to use this skill
 
-Use when the user wants to publish extracted or promoted skills to a Prism skill registry. Invoked as `/publish-skills`, optionally with flags: `--all` (publish everything regardless of delta state) or `--registry NAME` (target a named registry).
+Use when the user wants to publish extracted or promoted skills to a Prism skill registry. Invoked as `/publish-skills` (Claude Code) or `@publish-skills` (Cursor), optionally with flags: `--all` (publish everything regardless of delta state) or `--registry NAME` (target a named registry).
 
 ## Prerequisites
 
-- Skills must exist in `_analysis/extracted_skills_codebase/` (created by `/extract-skills` or `prism promote`) and/or `_analysis/extracted_skills_history/` (created by `/run-history-pipeline`)
+- Skills must exist in `_analysis/extracted_skills_codebase/` (created by `/extract-skills` (Claude Code) or `@extract-skills` (Cursor), or `prism promote`) and/or `_analysis/extracted_skills_history/` (created by `/run-history-pipeline` (Claude Code) or `@run-history-pipeline` (Cursor))
 - Each skill directory must contain both `plugin.json` and `SKILL.md`
 - A registry must be configured in `~/.prism/registries.json` (or legacy `~/.prism/config.json`)
 - The `REGISTRY_TOKEN` environment variable or per-registry token in `registries.json` must be available
@@ -91,7 +91,7 @@ Then stop.
 
 ### Step 2 -- Discover valid skills
 
-Scan both `_analysis/extracted_skills_codebase/` (from `/extract-skills` and `prism promote`) and `_analysis/extracted_skills_history/` (from `/run-history-pipeline`) for skill directories. Each valid skill directory must contain both `plugin.json` and `SKILL.md`.
+Scan both `_analysis/extracted_skills_codebase/` (from `/extract-skills` (Claude Code) or `@extract-skills` (Cursor), and `prism promote`) and `_analysis/extracted_skills_history/` (from `/run-history-pipeline` (Claude Code) or `@run-history-pipeline` (Cursor)) for skill directories. Each valid skill directory must contain both `plugin.json` and `SKILL.md`.
 
 ```bash
 for base_dir in _analysis/extracted_skills_codebase _analysis/extracted_skills_history; do

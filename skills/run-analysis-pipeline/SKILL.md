@@ -1,20 +1,20 @@
 ---
 name: run-analysis-pipeline
-description: Run the codebase analysis pipeline — routes to agentic or general path, one step at a time, using /clear between steps to prevent context blowup.
+description: Run the codebase analysis pipeline — routes to agentic or general path, one step at a time, clearing context between steps (`/clear` in Claude Code, or clear context in Cursor) to prevent context blowup.
 ---
 
 ## When to use this skill
 
 Analyze a codebase and extract reusable skills from it. Routes to one of two paths based on whether the codebase uses LLMs/agents or is general-purpose:
 
-- **Agentic path**: `/analyze-agent-codebase` → `/extract-skills` *(optionally extended with `/mine-design` → `/synthesize-decisions`)*
-- **General path**: `/mine-design` → `/synthesize-decisions`
+- **Agentic path**: `/analyze-agent-codebase` (Claude Code) or `@analyze-agent-codebase` (Cursor) → `/extract-skills` (Claude Code) or `@extract-skills` (Cursor) *(optionally extended with `/mine-design` (Claude Code) or `@mine-design` (Cursor) → `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor))*
+- **General path**: `/mine-design` (Claude Code) or `@mine-design` (Cursor) → `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor)
 
 Both paths write extracted skills to `_analysis/extracted_skills/`.
 
-Supports `--from [step-name]` to restart from a specific step, e.g. `/run-analysis-pipeline --from extract-skills`.
+Supports `--from [step-name]` to restart from a specific step, e.g. `/run-analysis-pipeline --from extract-skills` (Claude Code) or `@run-analysis-pipeline --from extract-skills` (Cursor).
 
-> **Design note:** This pipeline is a coordinator, not an executor. It never runs steps inline — it hands off to each step skill directly so every step runs in a clean context window. Each invocation of `/run-analysis-pipeline` either hands off to the next step or confirms the previous step completed and hands off to the one after it.
+> **Design note:** This pipeline is a coordinator, not an executor. It never runs steps inline — it hands off to each step skill directly so every step runs in a clean context window. Each invocation of `/run-analysis-pipeline` (Claude Code) or `@run-analysis-pipeline` (Cursor) either hands off to the next step or confirms the previous step completed and hands off to the one after it.
 
 ---
 
@@ -66,7 +66,7 @@ If all steps are completed and `published: false` (or absent):
 
 > "All pipeline steps are done. Skills are in `_analysis/extracted_skills_codebase/`.
 >
-> Run `/curate-skills` to review and clean up, then `/publish-skills` to create a PR."
+> Run `/curate-skills` (Claude Code) or `@curate-skills` (Cursor) to review and clean up, then `/publish-skills` (Claude Code) or `@publish-skills` (Cursor) to create a PR."
 
 Then stop.
 
@@ -74,7 +74,7 @@ If all steps are completed and `published: true`:
 
 > "Pipeline complete and skills already published."
 >
-> "To re-run from a specific step: `/run-analysis-pipeline --from [step-name]`"
+> "To re-run from a specific step: `/run-analysis-pipeline --from [step-name]` (Claude Code) or `@run-analysis-pipeline --from [step-name]` (Cursor)"
 
 Then stop.
 
@@ -89,16 +89,16 @@ Otherwise, ask:
 > "Is this codebase **agentic** (uses LLMs, tools, or an agent framework like LangGraph, AutoGen, CrewAI, etc.) or **general-purpose** (a web API, CLI, background worker, data pipeline, etc.)?
 >
 > This determines which analysis path to run:
-> - **Agentic** → `/analyze-agent-codebase` then `/extract-skills`
-> - **General** → `/mine-design` then `/synthesize-decisions`"
+> - **Agentic** → `/analyze-agent-codebase` (Claude Code) or `@analyze-agent-codebase` (Cursor), then `/extract-skills` (Claude Code) or `@extract-skills` (Cursor)
+> - **General** → `/mine-design` (Claude Code) or `@mine-design` (Cursor), then `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor)"
 
 Wait for their response. Accept `agentic`, `agent`, `yes`, or `y` as agentic.
 
 **If agentic**, ask a follow-up:
 
-> "Also run **extended analysis** (`/mine-design` → `/synthesize-decisions`) to extract general architecture practices from supporting infrastructure (API layer, storage, auth, queues)?
+> "Also run **extended analysis** (`/mine-design` (Claude Code) or `@mine-design` (Cursor) → `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor)) to extract general architecture practices from supporting infrastructure (API layer, storage, auth, queues)?
 >
-> [y/N] — adds 2 more steps with a /clear between each"
+> [y/N] — adds 2 more steps, clearing context between each (`/clear` in Claude Code, or clear context in Cursor)"
 
 Accept `y`, `yes`, or `extended` for extended mode. Default is `n`.
 
@@ -176,16 +176,16 @@ Do **not** read or execute its SKILL.md. It loads 7 question files during execut
 Tell the developer:
 
 > "---"
-> "**Next: /analyze-agent-codebase**"
+> "**Next: `/analyze-agent-codebase` (Claude Code) or `@analyze-agent-codebase` (Cursor)**"
 > ""
-> "Type `/clear` to free context, then run `/analyze-agent-codebase` directly."
-> "When it finishes, run `/run-analysis-pipeline` to continue."
+> "Clear context (`/clear` in Claude Code, or clear context in Cursor), then invoke `@analyze-agent-codebase` (Cursor) or `/analyze-agent-codebase` (Claude Code) directly."
+> "When it finishes, run `/run-analysis-pipeline` (Claude Code) or `@run-analysis-pipeline` (Cursor) to continue."
 
 Then stop. Do not proceed further in this invocation.
 
 **For all other steps** (`extract-skills`, `mine-design`, `synthesize-decisions`):
 
-Read the SKILL.md for the current step from `.claude/skills/[step-name]/SKILL.md` and execute it fully.
+Read the SKILL.md for the current step from `~/.prism/skills/[step-name]/SKILL.md` and execute it fully.
 
 **Important:** Run the step as written — do not skip its human-in-the-loop stages, do not abbreviate its analysis, do not shortcut its confirmation checkpoints. The full interactive flow is the point.
 
@@ -211,7 +211,7 @@ After the step completes successfully:
    > "---"
    > "**[step-name] complete.**"
    > ""
-   > "Type `/clear` to free context, then `/run-analysis-pipeline` to continue with **[next-step-name]**."
+   > "Clear context (`/clear` in Claude Code, or `/reset` in Cursor), then invoke `@run-analysis-pipeline` (Cursor) or `/run-analysis-pipeline` (Claude Code) to continue with **[next-step-name]**."
 
 3. If all steps are done:
 
@@ -242,7 +242,7 @@ After the step completes successfully:
    > ""
    > "N skill(s) written to `_analysis/extracted_skills_codebase/`. Report saved to `_analysis/report.md`."
    > ""
-   > "Type `/clear` to free context, then run `/curate-skills` to review before publishing."
+   > "Clear context (`/clear` in Claude Code, or clear context in Cursor), then invoke `@curate-skills` (Cursor) or `/curate-skills` (Claude Code) to review before publishing."
 
 ---
 
@@ -250,7 +250,7 @@ After the step completes successfully:
 
 **If a required input file is missing** (e.g., `extract-skills` is `next` but `_analysis/full_report.md` doesn't exist, or `synthesize-decisions` is `next` but `_analysis/design.md` doesn't exist):
 
-> "`_analysis/full_report.md` not found — `/analyze-agent-codebase` must run first."
+> "`_analysis/full_report.md` not found — `/analyze-agent-codebase` (Claude Code) or `@analyze-agent-codebase` (Cursor) must run first."
 
 Update the state file's `next` field to `analyze-agent-codebase` and stop.
 
@@ -260,7 +260,7 @@ Update the state file to mark that step completed and proceed to the next. Note 
 
 **If a step fails mid-way:**
 
-The state file remains unchanged (`next` stays as the failed step). Run `/run-analysis-pipeline` again to retry from the same step.
+The state file remains unchanged (`next` stays as the failed step). Run `/run-analysis-pipeline` (Claude Code) or `@run-analysis-pipeline` (Cursor) again to retry from the same step.
 
-> "If the step failed partway, run `/run-analysis-pipeline` to retry. The state file was not modified."
+> "If the step failed partway, run `/run-analysis-pipeline` (Claude Code) or `@run-analysis-pipeline` (Cursor) to retry. The state file was not modified."
 
