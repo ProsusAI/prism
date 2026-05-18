@@ -66,6 +66,7 @@ def run_extraction(project_id: str) -> dict:
         else:
             n_candidates = _phase1_extract(project_id)
             if n_candidates == 0:
+                _rotate_observations(project_id)
                 return {"extracted": 0, "approved": 0, "rejected": 0, "modified": 0}
 
         # Phase 2: Sonnet validates candidates

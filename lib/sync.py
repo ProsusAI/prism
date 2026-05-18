@@ -37,6 +37,13 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
     # Collect all entries for selection
     all_entries = _collect_entries(project_id)
     if not all_entries:
+        root = Path(output_dir) if output_dir else get_project_root()
+        for stale in [
+            root / ".claude" / "prism.md",
+            root / ".cursor" / "rules" / "prism.mdc",
+        ]:
+            if stale.exists():
+                stale.unlink()
         return ""
 
     # Select what goes into the system prompt (the PUSH layer)
