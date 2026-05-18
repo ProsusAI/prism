@@ -1,18 +1,18 @@
 ---
 name: run-history-pipeline
-description: Mine this repository's git history for failure-mode practices and extract them as reusable skills, one step at a time, using /clear between steps to prevent context blowup.
+description: Mine this repository's git history for failure-mode practices and extract them as reusable skills, one step at a time, clearing context between steps (`/clear` in Claude Code, or clear context in Cursor) to prevent context blowup.
 ---
 
 ## When to use this skill
 
-Extract failure-mode practices from a repository's git history. Runs two steps in order, with a `/clear` between them:
+Extract failure-mode practices from a repository's git history. Runs two steps in order, clearing context between them (`/clear` in Claude Code, or clear context in Cursor):
 
-1. `mine-history` → reads git log, produces `_analysis/directives.md`, `_analysis/architecture.md`, and `_analysis/incidents.md`
-2. `synthesize` → reads `_analysis/incidents.md`, produces `_analysis/extracted_skills_history/*/SKILL.md` + `plugin.json`
+1. `mine-history` (`/mine-history` in Claude Code or `@mine-history` in Cursor) → reads git log, produces `_analysis/directives.md`, `_analysis/architecture.md`, and `_analysis/incidents.md`
+2. `synthesize` (`/synthesize` in Claude Code or `@synthesize` in Cursor) → reads `_analysis/incidents.md`, produces `_analysis/extracted_skills_history/*/SKILL.md` + `plugin.json`
 
-Supports `--from [step-name]` to start from a specific step, e.g. `/run-history-pipeline --from synthesize`.
+Supports `--from [step-name]` to start from a specific step, e.g. `/run-history-pipeline --from synthesize` (Claude Code) or `@run-history-pipeline --from synthesize` (Cursor).
 
-> **Note:** This pipeline is optional. If you only want to analyze the codebase's current design (not its history), run `/run-analysis-pipeline` instead.
+> **Note:** This pipeline is optional. If you only want to analyze the codebase's current design (not its history), run `/run-analysis-pipeline` (Claude Code) or `@run-analysis-pipeline` (Cursor) instead.
 
 ---
 
@@ -40,7 +40,7 @@ If the state file shows both steps completed and `published: false` (or `publish
 
 > "All 2 pipeline steps are done. Skills are in `_analysis/extracted_skills_history/`.
 >
-> Run `/curate-skills` to review and clean up, then `/publish-skills` to create a PR."
+> Run `/curate-skills` (Claude Code) or `@curate-skills` (Cursor) to review and clean up, then `/publish-skills` (Claude Code) or `@publish-skills` (Cursor) to create a PR."
 
 Then stop.
 
@@ -48,7 +48,7 @@ If the state file shows all steps completed and `published: true`:
 
 > "Pipeline complete and skills already published."
 >
-> "To re-run from a specific step: `/run-history-pipeline --from [step-name]`"
+> "To re-run from a specific step: `/run-history-pipeline --from [step-name]` (Claude Code) or `@run-history-pipeline --from [step-name]` (Cursor)"
 
 Then stop.
 
@@ -65,11 +65,11 @@ Use `✓` for completed, `→` for next (about to run), `·` for pending.
 
 ## Step 2 — Run the current step
 
-Read the SKILL.md for the current step from `.claude/skills/[step-name]/SKILL.md` and execute it fully.
+Read the SKILL.md for the current step from `~/.prism/skills/[step-name]/SKILL.md` and execute it fully.
 
 **Step name mapping:**
-- `mine-history` → `.claude/skills/mine-history/SKILL.md`
-- `synthesize` → `.claude/skills/synthesize/SKILL.md`
+- `mine-history` → `~/.prism/skills/mine-history/SKILL.md`
+- `synthesize` → `~/.prism/skills/synthesize/SKILL.md`
 
 **Important:** Run the step as written — do not skip its human-in-the-loop stages, do not abbreviate its analysis, do not shortcut its confirmation checkpoints. The full interactive flow is the point.
 
@@ -108,7 +108,7 @@ After the step completes successfully:
    > "---"
    > "**[step-name] complete.**"
    > ""
-   > "Type `/clear` to free context, then `/run-history-pipeline` to continue with **[next-step-name]**."
+   > "Clear context (`/clear` in Claude Code, or clear context in Cursor), then invoke `@run-history-pipeline` (Cursor) or `/run-history-pipeline` (Claude Code) to continue with **[next-step-name]**."
 
 3. If all 2 steps are done:
 
@@ -139,4 +139,4 @@ After the step completes successfully:
    > ""
    > "N skill(s) written to `_analysis/extracted_skills_history/`. Report saved to `_analysis/report.md`."
    > ""
-   > "Type `/clear` to free context, then run `/curate-skills` to review before publishing."
+   > "Clear context (`/clear` in Claude Code, or clear context in Cursor), then invoke `@curate-skills` (Cursor) or `/curate-skills` (Claude Code) to review before publishing."

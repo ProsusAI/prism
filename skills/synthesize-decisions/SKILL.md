@@ -1,13 +1,13 @@
 ---
 name: synthesize-decisions
-description: "Promote design decisions from _analysis/design.md into normative practice skills — guidance that loads before a developer makes the wrong choice. TRIGGER when: _analysis/design.md exists and is ready to promote, running /synthesize-decisions after /mine-design, extracting design-decision practices from a codebase snapshot analysis."
+description: "Promote design decisions from _analysis/design.md into normative practice skills — guidance that loads before a developer makes the wrong choice. TRIGGER when: _analysis/design.md exists and is ready to promote, running `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor) after `/mine-design` (Claude Code) or `@mine-design` (Cursor), extracting design-decision practices from a codebase snapshot analysis."
 ---
 
 ## When to use this skill
 
-Promote design decisions from `_analysis/design.md` into normative practices — guidance that loads **before** a developer makes the wrong choice, not after they hit a bug. Complements `/synthesize` (which promotes failure-mode practices from incident history and assembled cross-subsystem patterns).
+Promote design decisions from `_analysis/design.md` into normative practices — guidance that loads **before** a developer makes the wrong choice, not after they hit a bug. Complements `/synthesize` (Claude Code) or `@synthesize` (Cursor) (which promotes failure-mode practices from incident history and assembled cross-subsystem patterns).
 
-Run this after `/mine-design`. Run `/synthesize` separately for incident-history practices.
+Run this after `/mine-design` (Claude Code) or `@mine-design` (Cursor). Run `/synthesize` (Claude Code) or `@synthesize` (Cursor) separately for incident-history practices.
 
 ---
 
@@ -15,7 +15,7 @@ Run this after `/mine-design`. Run `/synthesize` separately for incident-history
 
 Read `_analysis/design.md` fully. If it doesn't exist, stop and tell the developer:
 
-> "`_analysis/design.md` not found. Run `/mine-design` first."
+> "`_analysis/design.md` not found. Run `/mine-design` (Claude Code) or `@mine-design` (Cursor) first."
 
 Read all sections: decisions, trade-offs, non-obvious behaviors, structural anti-patterns, and the `## Architectural patterns` section. Record every finding.
 

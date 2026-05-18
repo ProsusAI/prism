@@ -47,7 +47,9 @@ mkdir -p "$BIN_DIR"
 
 # 2. Copy hooks (overwrite on upgrade)
 cp "$PRISM_REPO/hooks/capture.sh" "$PRISM_HOME/hooks/capture.sh"
+cp "$PRISM_REPO/hooks/capture_cursor.sh" "$PRISM_HOME/hooks/capture_cursor.sh"
 chmod +x "$PRISM_HOME/hooks/capture.sh"
+chmod +x "$PRISM_HOME/hooks/capture_cursor.sh"
 
 # 3. Copy agent prompts (overwrite on upgrade)
 cp "$PRISM_REPO/agents/"*.md "$PRISM_HOME/agents/"

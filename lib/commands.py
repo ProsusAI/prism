@@ -20,14 +20,14 @@ from .index import (
     save_index,
     update_confidence,
 )
-from .project import detect_project_id, detect_project_name
+from .project import detect_project_id, detect_project_name, get_project_root
 
 
 def cmd_init() -> None:
     """Initialize prism for the current project.
 
-    Creates ~/.prism/ structure, configures hooks in settings.local.json and MCP in ~/.claude.json,
-    symlinks skills, updates .gitignore, generates initial .claude/prism.md.
+    Creates ~/.prism/ structure, configures hooks and MCP for Claude Code/Cursor,
+    symlinks skills, updates .gitignore, generates IDE context files.
     Idempotent -- safe to re-run.
     """
     from .config import init_prism_home
@@ -40,7 +40,7 @@ def cmd_init() -> None:
 
     # Write project ID cache for hook performance (OBS-05)
     if project_id != "global":
-        cache_path = Path.cwd() / ".claude" / ".prism_project_id"
+        cache_path = get_project_root() / ".claude" / ".prism_project_id"
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(project_id + "\n")
 
@@ -79,11 +79,11 @@ def cmd_init() -> None:
     # Print concise summary (D-06, D-11)
     print(f"\n\033[32mPrism initialized for {project_name} ({project_id})\033[0m")
     print()
-    print(f"  Hooks:   .claude/settings.local.json (PreToolUse only)")
-    print(f"  MCP:     prism knowledge server registered")
-    print(f"  Context: .claude/prism.md generated")
+    print("  Hooks:   .claude/settings.local.json (Claude Code) + .cursor/settings.json (Cursor)")
+    print("  MCP:     prism knowledge server registered (Claude Code + Cursor)")
+    print("  Context: .claude/prism.md + .cursor/rules/prism.mdc generated")
     if skills_count > 0:
-        print(f"  Skills:  {skills_count} slash commands linked")
+        print(f"  Skills:  {skills_count} slash commands linked (.claude/skills/ + .cursor/rules/)")
     print()
     print("Start coding -- observations accumulate automatically.")
     print("Run \033[1mprism extract\033[0m after ~15 observations to generate engrams.")
@@ -96,7 +96,7 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     MCP server → ~/.claude.json (projects[cwd].mcpServers) — where Claude Code reads it.
     Carefully merges with existing config -- never clobbers other tools' entries (D-05).
     """
-    claude_dir = Path.cwd() / ".claude"
+    claude_dir = get_project_root() / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Hooks → settings.local.json ---
@@ -140,6 +140,61 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
     # --- MCP Server → ~/.claude.json (projects[cwd].mcpServers) ---
     _write_mcp_to_claude_json(project_id)
 
+    # --- Cursor hooks + MCP ---
+    _setup_cursor_hooks_and_mcp(project_id)
+
+
+def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
+    """Configure Cursor project hooks and user-level MCP server.
+
+    Hooks → .cursor/settings.json (project-level).
+    MCP server → ~/.cursor/mcp.json (mcpServers.prism).
+    """
+    cursor_dir = get_project_root() / ".cursor"
+    cursor_dir.mkdir(parents=True, exist_ok=True)
+
+    settings_path = cursor_dir / "settings.json"
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    hooks = settings.get("hooks", {})
+    capture_cmd = str(PRISM_HOME / "hooks" / "capture_cursor.sh")
+    for event, phase_arg in [("preToolUse", "pre"), ("postToolUse", "post")]:
+        command = f"{capture_cmd} {phase_arg}"
+        entries = hooks.get(event, [])
+        existing_cmds = {entry.get("command", "") for entry in entries if isinstance(entry, dict)}
+        if command not in existing_cmds:
+            entries.append({"command": command})
+        hooks[event] = entries
+
+    settings["hooks"] = hooks
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+
+    cursor_mcp_path = Path.home() / ".cursor" / "mcp.json"
+    cursor_mcp_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {}
+    if cursor_mcp_path.exists():
+        try:
+            data = json.loads(cursor_mcp_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    mcp_servers = data.get("mcpServers", {})
+    mcp_servers["prism"] = {
+        "command": sys.executable,
+        "args": [str(PRISM_HOME / "lib" / "mcp_server.py")],
+        "env": {"PRISM_PROJECT_ID": project_id},
+    }
+    data["mcpServers"] = mcp_servers
+
+    tmp = cursor_mcp_path.parent / (cursor_mcp_path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.rename(str(tmp), str(cursor_mcp_path))
+
 
 def _write_mcp_to_claude_json(project_id: str) -> None:
     """Write prism MCP server entry into ~/.claude.json under projects[cwd].mcpServers."""
@@ -151,7 +206,7 @@ def _write_mcp_to_claude_json(project_id: str) -> None:
         except (json.JSONDecodeError, OSError):
             pass
 
-    project_key = str(Path.cwd())
+    project_key = str(get_project_root())
     projects = data.get("projects", {})
     project_entry = projects.get(project_key, {})
     mcp_servers = project_entry.get("mcpServers", {})
@@ -179,7 +234,7 @@ def _remove_mcp_from_claude_json() -> None:
     except (json.JSONDecodeError, OSError):
         return
 
-    project_key = str(Path.cwd())
+    project_key = str(get_project_root())
     project_entry = data.get("projects", {}).get(project_key)
     if not project_entry:
         return
@@ -200,43 +255,67 @@ def _remove_mcp_from_claude_json() -> None:
 
 
 def _setup_slash_commands() -> int:
-    """Symlink Prism skills to .claude/skills/. Returns count installed."""
+    """Symlink Prism skills to Claude Code skills and Cursor rules. Returns count installed."""
     skills_src = PRISM_HOME / "skills"
     if not skills_src.exists() or not any(skills_src.iterdir()):
         return 0
 
-    skills_dest = Path.cwd() / ".claude" / "skills"
-    skills_dest.mkdir(parents=True, exist_ok=True)
+    claude_dest = get_project_root() / ".claude" / "skills"
+    claude_dest.mkdir(parents=True, exist_ok=True)
+    cursor_rules_dest = get_project_root() / ".cursor" / "rules"
+    cursor_rules_dest.mkdir(parents=True, exist_ok=True)
 
     installed = 0
     for skill_dir in skills_src.iterdir():
         if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
-            dest = skills_dest / skill_dir.name
-            if dest.is_symlink() or dest.exists():
-                if dest.is_symlink():
-                    dest.unlink()
+            claude_skill_dest = claude_dest / skill_dir.name
+            if claude_skill_dest.is_symlink() or claude_skill_dest.exists():
+                if claude_skill_dest.is_symlink():
+                    claude_skill_dest.unlink()
                 else:
-                    shutil.rmtree(str(dest))
-            dest.symlink_to(skill_dir)
+                    shutil.rmtree(str(claude_skill_dest))
+            claude_skill_dest.symlink_to(skill_dir)
+
+            # Remove legacy .md symlink if it exists (migration from pre-.mdc format)
+            legacy_md = cursor_rules_dest / f"{skill_dir.name}.md"
+            if legacy_md.is_symlink() or legacy_md.is_file():
+                legacy_md.unlink()
+
+            cursor_skill_dest = cursor_rules_dest / f"{skill_dir.name}.mdc"
+            if cursor_skill_dest.is_symlink() or cursor_skill_dest.exists():
+                if cursor_skill_dest.is_symlink() or cursor_skill_dest.is_file():
+                    cursor_skill_dest.unlink()
+                else:
+                    shutil.rmtree(str(cursor_skill_dest))
+            cursor_skill_dest.symlink_to(skill_dir / "SKILL.md")
+
             installed += 1
     return installed
 
 
 def _update_gitignore() -> None:
     """Add Prism-generated files to .gitignore (T-01-10: duplicate check + comment block)."""
-    gitignore_path = Path.cwd() / ".gitignore"
+    gitignore_path = get_project_root() / ".gitignore"
     entries = [
         ".claude/settings.local.json",
         ".claude/prism.md",
         ".claude/skills/",
         ".claude/.prism_project_id",
+        ".cursor/settings.json",
+        ".cursor/rules/*.mdc",
     ]
 
     existing_content = ""
     if gitignore_path.exists():
         existing_content = gitignore_path.read_text()
-    existing_lines = set(existing_content.splitlines())
 
+    # Migrate legacy .md glob to .mdc in-place
+    migrated_content = existing_content.replace(".cursor/rules/*.md\n", ".cursor/rules/*.mdc\n")
+    if migrated_content != existing_content:
+        gitignore_path.write_text(migrated_content)
+        existing_content = migrated_content
+
+    existing_lines = set(existing_content.splitlines())
     to_add = [e for e in entries if e not in existing_lines]
     if to_add:
         with open(gitignore_path, "a") as f:
@@ -260,7 +339,7 @@ def cmd_status(project_id: Optional[str] = None) -> None:
     entries = list_entries(project_id=project_id)
 
     # Check context file
-    claude_ctx = Path.cwd() / ".claude" / "prism.md"
+    claude_ctx = get_project_root() / ".claude" / "prism.md"
 
     print(f"\033[1mPrism Status: {project_name}\033[0m ({project_id})")
     print()
@@ -619,7 +698,7 @@ def cmd_disable_hook() -> None:
     fully functional. Users can still run 'prism analyze-sessions --extract'
     manually after a session to get the same learning at their own pace.
     """
-    settings_path = Path.cwd() / ".claude" / "settings.local.json"
+    settings_path = get_project_root() / ".claude" / "settings.local.json"
     if not settings_path.exists():
         print("No .claude/settings.local.json found -- hook was not installed for this project.")
         return
@@ -703,10 +782,11 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
         project_id = detect_project_id()
     project_name = detect_project_name()
 
-    settings_path = Path.cwd() / ".claude" / "settings.local.json"
-    prism_md = Path.cwd() / ".claude" / "prism.md"
-    project_id_cache = Path.cwd() / ".claude" / ".prism_project_id"
-    skills_dest = Path.cwd() / ".claude" / "skills"
+    root = get_project_root()
+    settings_path = root / ".claude" / "settings.local.json"
+    prism_md = root / ".claude" / "prism.md"
+    project_id_cache = root / ".claude" / ".prism_project_id"
+    skills_dest = root / ".claude" / "skills"
     project_dir = PRISM_HOME / "projects" / project_id
 
     print(f"This will remove all Prism integration from {project_name} ({project_id}):")
@@ -824,7 +904,7 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
 
 def _remove_gitignore_entries() -> None:
     """Remove the Prism-managed block from .gitignore."""
-    gitignore_path = Path.cwd() / ".gitignore"
+    gitignore_path = get_project_root() / ".gitignore"
     if not gitignore_path.exists():
         return
 
@@ -836,6 +916,8 @@ def _remove_gitignore_entries() -> None:
         ".claude/prism.md",
         ".claude/skills/",
         ".claude/.prism_project_id",
+        ".cursor/settings.json",
+        ".cursor/rules/*.mdc",
         "# Prism (auto-generated, machine-specific)",
     }
 
@@ -852,7 +934,7 @@ def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:
     project_name = detect_project_name()
 
     project_dir = PRISM_HOME / "projects" / project_id
-    prism_md = Path.cwd() / ".claude" / "prism.md"
+    prism_md = get_project_root() / ".claude" / "prism.md"
 
     print(f"This will delete all Prism data for {project_name} ({project_id}):")
     print(f"  {project_dir}/  (engrams, observations, candidates, archive)")

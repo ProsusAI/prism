@@ -31,6 +31,17 @@ def main() -> None:
     except (json.JSONDecodeError, ValueError):
         return
 
+    # Normalise payload: Cursor uses camelCase, Claude Code uses snake_case
+    source = os.environ.get("PRISM_SOURCE", "claude_code")
+    if source == "cursor":
+        # Cursor hook payload field mapping
+        if "toolName" in data and "tool_name" not in data:
+            data["tool_name"] = data["toolName"]
+        if "composerId" in data and "session_id" not in data:
+            data["session_id"] = data["composerId"]
+        if "toolInput" in data and "tool_input" not in data:
+            data["tool_input"] = data["toolInput"]
+
     tool_name = data.get("tool_name", "")
     session_id = data.get("session_id", "")
     tool_input = data.get("tool_input", {})
@@ -56,7 +67,7 @@ def main() -> None:
         "input_summary": summary,
         "session": session_id,
         "project_id": project_id,
-        "source": "claude_code",
+        "source": source,
     }
 
     # Atomic append using O_APPEND (OBS-04)

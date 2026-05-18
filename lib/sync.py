@@ -13,10 +13,18 @@ from typing import Optional
 
 from .config import PRISM_HOME, get_config, get_engrams_dir
 from .index import list_entries, load_index, reinforce_entries
+from .project import get_project_root
+
+_CURSOR_FRONTMATTER = (
+    "---\n"
+    "description: Prism active knowledge — project-specific engrams and team patterns\n"
+    "alwaysApply: true\n"
+    "---\n\n"
+)
 
 
-def sync_claude_code(project_id: str, output_dir: Optional[str] = None) -> str:
-    """Generate .claude/prism.md with hybrid push/pull approach.
+def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
+    """Generate IDE context files with hybrid push/pull approach.
 
     PUSH (in this file): corrections, pinned, top preferences, session-validated patterns.
     PULL (via MCP): full knowledge base searchable on demand.
@@ -140,16 +148,28 @@ def sync_claude_code(project_id: str, output_dir: Optional[str] = None) -> str:
 
     content = "\n".join(lines) + "\n"
 
-    # Write to output directory
-    if output_dir:
-        out_path = Path(output_dir) / ".claude" / "prism.md"
-    else:
-        out_path = Path.cwd() / ".claude" / "prism.md"
+    # Write to Claude Code path
+    root = Path(output_dir) if output_dir else get_project_root()
+    claude_path = root / ".claude" / "prism.md"
+    claude_path.parent.mkdir(parents=True, exist_ok=True)
+    claude_path.write_text(content)
+    print(f"Generated {claude_path} ({len(lines)} lines, {len(prompt_entries)} pushed, {mcp_only_count} via MCP)")
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(content)
-    print(f"Generated {out_path} ({len(lines)} lines, {len(prompt_entries)} pushed, {mcp_only_count} via MCP)")
-    return str(out_path)
+    # Write to Cursor path (.mdc with alwaysApply frontmatter)
+    cursor_rules_dir = root / ".cursor" / "rules"
+    cursor_rules_dir.mkdir(parents=True, exist_ok=True)
+    legacy_md = cursor_rules_dir / "prism.md"
+    if legacy_md.exists():
+        legacy_md.unlink()
+    cursor_path = cursor_rules_dir / "prism.mdc"
+    cursor_path.write_text(_CURSOR_FRONTMATTER + content)
+    print(f"Generated {cursor_path}")
+
+    return str(claude_path)
+
+
+# Backward-compat alias
+sync_claude_code = sync_context
 
 
 def _select_prompt_entries(entries: list, max_items: int = 10) -> list:

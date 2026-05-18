@@ -12,6 +12,7 @@ from .scrub import sanitize_payload
 
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+CURSOR_PROJECTS_DIR = Path.home() / ".cursor" / "projects"
 TRACKER_PATH = PRISM_HOME / "analyzed-sessions.json"
 
 # Heuristic: user text that looks like a correction or preference
@@ -158,6 +159,7 @@ def list_sessions(
                 "cwd": cwd,
                 "project_id": pid,
                 "line_count": line_count,
+                "ide": "claude_code",
             })
 
     # Filter by date if --since provided
@@ -173,6 +175,110 @@ def list_sessions(
     sessions.sort(key=lambda s: os.path.getmtime(s["path"]))
 
     # Limit to last N if --last provided
+    if last_n is not None and last_n > 0:
+        sessions = sessions[-last_n:]
+
+    return sessions
+
+
+def list_cursor_sessions(
+    project_filter: "str | None" = None,
+    since_date: "str | None" = None,
+    last_n: "int | None" = None,
+) -> list[dict]:
+    """List available Cursor IDE sessions with metadata.
+
+    Cursor stores transcripts under
+    ~/.cursor/projects/<sanitized-path>/agent-transcripts/<id>.jsonl.
+    The cwd is reconstructed from the sanitized folder name.
+    """
+    if not CURSOR_PROJECTS_DIR.exists():
+        return []
+
+    sessions = []
+    cwd_cache: dict[str, str] = {}
+
+    for folder in sorted(CURSOR_PROJECTS_DIR.iterdir()):
+        if not folder.is_dir():
+            continue
+        transcripts_dir = folder / "agent-transcripts"
+        if not transcripts_dir.is_dir():
+            continue
+        for jsonl_file in transcripts_dir.glob("*.jsonl"):
+            session_id = jsonl_file.stem
+            size = jsonl_file.stat().st_size
+            if size == 0:
+                continue
+
+            # Cursor folder names are project paths sanitized with non-alphanumerics
+            # replaced by hyphens and leading hyphens trimmed. Reconstruct a cwd.
+            cwd = "/" + folder.name.replace("-", "/").lstrip("/")
+            pid = resolve_project_id_from_cwd(cwd, cwd_cache) if cwd else "global"
+
+            if project_filter and pid != project_filter:
+                continue
+
+            line_count = 0
+            try:
+                with open(jsonl_file) as f:
+                    for _ in f:
+                        line_count += 1
+            except OSError:
+                continue
+
+            sessions.append({
+                "path": str(jsonl_file),
+                "session_id": session_id,
+                "folder_name": folder.name,
+                "size": size,
+                "cwd": cwd,
+                "project_id": pid,
+                "line_count": line_count,
+                "ide": "cursor",
+            })
+
+    if since_date:
+        try:
+            from datetime import date as date_type
+            cutoff = date_type.fromisoformat(since_date)
+            sessions = [s for s in sessions if _session_date(s["path"]) >= cutoff]
+        except ValueError:
+            pass
+
+    sessions.sort(key=lambda s: os.path.getmtime(s["path"]))
+
+    if last_n is not None and last_n > 0:
+        sessions = sessions[-last_n:]
+
+    return sessions
+
+
+def list_all_sessions(
+    project_filter: "str | None" = None,
+    since_date: "str | None" = None,
+    last_n: "int | None" = None,
+) -> list[dict]:
+    """List Claude Code and Cursor sessions, deduplicated by session_id."""
+    combined = list_sessions(
+        project_filter=project_filter,
+        since_date=since_date,
+        last_n=None,
+    ) + list_cursor_sessions(
+        project_filter=project_filter,
+        since_date=since_date,
+        last_n=None,
+    )
+
+    by_id: dict[str, dict] = {}
+    for sess in combined:
+        session_id = sess["session_id"]
+        current = by_id.get(session_id)
+        if current is None or os.path.getmtime(sess["path"]) > os.path.getmtime(current["path"]):
+            by_id[session_id] = sess
+
+    sessions = list(by_id.values())
+    sessions.sort(key=lambda s: os.path.getmtime(s["path"]))
+
     if last_n is not None and last_n > 0:
         sessions = sessions[-last_n:]
 
@@ -356,6 +462,7 @@ def analyze_all_sessions(
     since_date: "str | None" = None,
     last_n: "int | None" = None,
     force: bool = False,
+    source: str = "all",
 ) -> dict:
     """Analyze sessions and write observations.
 
@@ -363,6 +470,7 @@ def analyze_all_sessions(
         project_filter: Only analyze sessions for this project_id (default: auto-detect current).
         all_projects: Analyze all projects regardless of filter.
         dry_run: Don't write observations, just report what would happen.
+        source: Session source to analyze: "claude", "cursor", or "all".
 
     Returns: {processed, skipped, total_observations, by_project: {pid: {sessions, observations}}}
     """
@@ -371,7 +479,14 @@ def analyze_all_sessions(
         project_filter = detect_project_id()
 
     tracker = _load_tracker()
-    sessions = list_sessions(
+    if source == "claude":
+        list_func = list_sessions
+    elif source == "cursor":
+        list_func = list_cursor_sessions
+    else:
+        list_func = list_all_sessions
+
+    sessions = list_func(
         project_filter=None if all_projects else project_filter,
         since_date=since_date,
         last_n=last_n,

@@ -5,7 +5,7 @@ description: Query the skill registry to find relevant architectural skills matc
 
 ## When to use this skill
 
-Use when the user wants to find skills relevant to a task or architectural decision. Invoked as `/advise-skills <query>`.
+Use when the user wants to find skills relevant to a task or architectural decision. Invoked as `/advise-skills <query>` (Claude Code) or `@advise-skills <query>` (Cursor).
 
 ## Configuration
 
@@ -158,7 +158,7 @@ If none of the above sources are available, tell the user:
 > **No skill registry available.** Options:
 > 1. Add a registry: `prism registry add NAME --url URL --token TOKEN`
 > 2. Place `skill-registry.json` in the project root
-> 3. Run `/extract-skills` to create local skills
+> 3. Run `/extract-skills` (Claude Code) or `@extract-skills` (Cursor) to create local skills
 
 Then stop.
 
@@ -226,7 +226,7 @@ PYEOF
 
 **If the skill was loaded from local sources:** Read `_analysis/extracted_skills_codebase/{name}/SKILL.md` directly.
 
-If a fetch succeeds for a remote skill, save the content to `.claude/skills/{name}/SKILL.md` using the Write tool so it is available locally next time.
+If a fetch succeeds for a remote skill, save the content to `~/.prism/skills/{name}/SKILL.md` using the Write tool so it is available locally next time.
 
 If a fetch fails, note the failure in the output but continue processing other confirmed skills.
 
@@ -244,7 +244,7 @@ date +%d-%m-%Y
 ```
 
 ```markdown
-# /advise-skills Results
+# /advise-skills (Claude Code) or @advise-skills (Cursor) Results
 # {repository} -- {DD-MM-YYYY}
 
 > Query: {the user's original query}

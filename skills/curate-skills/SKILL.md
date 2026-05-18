@@ -1,6 +1,6 @@
 ---
 name: curate-skills
-description: "Post-extraction quality pass over _analysis/extracted_skills_history/ and _analysis/extracted_skills_codebase/ — applies three tests to every skill and proposes keep, delete, merge, or rewrite. TRIGGER when: finishing /extract-skills or /synthesize or /synthesize-decisions, reviewing extracted skills before publishing, cleaning up duplicate or framework-specific skills, running /curate-skills after any extraction step."
+description: "Post-extraction quality pass over _analysis/extracted_skills_history/ and _analysis/extracted_skills_codebase/ — applies three tests to every skill and proposes keep, delete, merge, or rewrite. TRIGGER when: finishing `/extract-skills` (Claude Code) or `@extract-skills` (Cursor), `/synthesize` (Claude Code) or `@synthesize` (Cursor), or `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor), reviewing extracted skills before publishing, cleaning up duplicate or framework-specific skills, running `/curate-skills` (Claude Code) or `@curate-skills` (Cursor) after any extraction step."
 ---
 ## When to use this skill
 
@@ -12,7 +12,7 @@ Post-extraction cleanup pass over `_analysis/extracted_skills_history/` and `_an
 
 Read every `SKILL.md` file under `_analysis/extracted_skills_history/` and `_analysis/extracted_skills_codebase/`. If both directories are absent or empty, stop:
 
-> "No skills found in `_analysis/extracted_skills_history/` or `_analysis/extracted_skills_codebase/`. Run `/run-history-pipeline` or `/run-analysis-pipeline` first."
+> "No skills found in `_analysis/extracted_skills_history/` or `_analysis/extracted_skills_codebase/`. Run `/run-history-pipeline` (Claude Code) or `@run-history-pipeline` (Cursor), or `/run-analysis-pipeline` (Claude Code) or `@run-analysis-pipeline` (Cursor), first."
 
 For each skill, record:
 - Name and file path (including which directory it came from)

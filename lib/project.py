@@ -3,6 +3,9 @@
 import hashlib
 import os
 import subprocess
+from pathlib import Path
+
+_project_root_cache: str = ""
 
 
 def detect_project_id() -> str:
@@ -61,6 +64,18 @@ def _git_remote_url() -> str:
         return result.stdout.strip() if result.returncode == 0 else ""
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return ""
+
+
+def get_project_root() -> Path:
+    """Return the git repository root, or cwd if not in a git repo.
+
+    Cached after first call — safe to call repeatedly within one process.
+    """
+    global _project_root_cache
+    if not _project_root_cache:
+        root = _git_repo_root()
+        _project_root_cache = root if root else os.getcwd()
+    return Path(_project_root_cache)
 
 
 def _git_repo_root() -> str:
