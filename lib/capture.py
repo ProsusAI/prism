@@ -38,7 +38,10 @@ def main() -> None:
     # Detect project ID
     # Priority: PRISM_PROJECT_ID env > cached file > git detection
     project_id = _get_project_id(prism_home)
-    project_dir = prism_home / "projects" / project_id
+    if project_id == "global":
+        project_dir = prism_home / "global"
+    else:
+        project_dir = prism_home / "projects" / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Build input summary with scrubbing + truncation
