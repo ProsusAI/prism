@@ -1,6 +1,6 @@
 # Prism
 
-A knowledge layer for Claude Code adn Cursor. Prism watches how you work, learns your preferences, and makes Claude/Cursor remember them across sessions. For teams, it lets you share proven architectural knowledge through a shared registry.
+A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns your preferences, and makes Claude/Cursor remember them across sessions. For teams, it lets you share proven architectural knowledge through a shared registry.
 
 **One install. Zero config for personal use. Registry config for teams.**
 
