@@ -146,40 +146,7 @@ For each skill, generate two files inside `{CODEBASE_ROOT}/_analysis/extracted_s
 
 **plugin.json:**
 
-```json
-{
-  "name": "{skill-name}",
-  "description": "{one-line skill description, no framework names}. TRIGGER when: {comma-separated usage scenarios, no framework names}.",
-  "author": "{auto-detected}",
-  "repository": "{auto-detected}",
-  "category": ["{primary category}", "{optional secondary category}"],
-  "source": "{internal | external <github-repo-url>}",
-  "commit_date": "{DD-MM-YYYY}",
-  "source_hash": "{short git commit hash or null}"
-}
-```
-
-Field details:
-- `name`: must match the directory name and the SKILL.md frontmatter name.
-- `description`: a short skill description followed by trigger conditions. Write 3-5 trigger scenarios. No framework names. Example:
-  ```
-  "description": "Manages conversation history in multi-turn tool-calling agents to prevent context overflow while preserving tool call coherence. TRIGGER when: building a multi-turn agent with tool calling, conversation history exceeds context limits, agent repeats tool calls or loses context after long sessions, tool outputs inflate message history."
-  ```
-- `category`: array of one or more categories (primary first). Valid values:
-  - `architecture` — structural patterns for multi-agent systems, delegation, coordination
-  - `execution-control` — control flow, error handling, fallback chains, concurrency
-  - `state-memory` — context management, conversation history, token budgets
-  - `persistence` — database patterns, transactions, migrations, connection management
-  - `networking` — API design, service communication, client retry patterns
-  - `tools` — tool calling patterns, tool design, tool orchestration
-  - `RAG` — retrieval-augmented generation, search, indexing
-  - `data-learning` — fine-tuning, evaluation, data pipelines
-  - `security` — prompt injection, leakage, input validation
-  - `monitoring-evaluation` — observability, tracing, LLM-as-judge, metrics
-  - `operations-deployment` — deployment, scaling, CI/CD for agents
-- `source`: set from user's answer — `"internal"` or `"external <github-repo-url>"` (e.g. `"external https://github.com/org/repo"`).
-- `commit_date`: today in `DD-MM-YYYY` format.
-- `source_hash`: short hash from `git rev-parse --short HEAD`. If not a git repo, set to `null`.
+Read `~/.prism/schemas/plugin.schema.json` for the authoritative field specification, required fields, valid category enum, and format patterns. Write one `plugin.json` per skill that validates against it.
 
 **SKILL.md:**
 

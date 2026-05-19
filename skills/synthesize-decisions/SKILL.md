@@ -36,7 +36,7 @@ The probes 7–9 findings from mine-design are especially relevant here (explici
 
 Look for: process-global state set per-request, shared mutable objects accessed concurrently, missing per-coroutine isolation in async frameworks, global registries modified at runtime.
 
-**Framing question:** If a developer followed the simplest path — one global variable, one shared object — what would break under concurrent load that single-threaded testing would never reveal?
+**Framing question:** What breaks under concurrent load that single-threaded testing never reveals?
 
 ---
 
@@ -45,7 +45,7 @@ Look for: process-global state set per-request, shared mutable objects accessed 
 
 Look for: exceptions caught and silently swallowed, fail-open vs. fail-closed decisions, which error subtypes trigger retry vs. fail-fast, custom error handling in place of framework defaults.
 
-**Framing question:** If a developer used the natural safe-feeling default — propagate all errors to the caller, or retry on any error — what would break in production that controlled testing wouldn't reveal?
+**Framing question:** What fails in production under real error rates when using standard propagation or blanket retry?
 
 ---
 
@@ -54,7 +54,7 @@ Look for: exceptions caught and silently swallowed, fail-open vs. fail-closed de
 
 Look for: signals consumed with `.pop()` instead of `.get()`, TTL defaults that are wrong for some callers, data written to persistent state that should be transient, state that accumulates across sessions when it should be reset.
 
-**Framing question:** If a developer used the same persistence default everywhere — store everything, use one TTL — what would accumulate incorrectly or expire too early?
+**Framing question:** What accumulates incorrectly or expires too early when using the same persistence default everywhere?
 
 ---
 
@@ -63,25 +63,33 @@ Look for: signals consumed with `.pop()` instead of `.get()`, TTL defaults that 
 
 Look for: settings explicitly overridden from their documented default, custom classes built instead of using framework built-ins, framework features intentionally bypassed, probe-8 findings (framework departures).
 
-**Framing question:** If a developer followed the framework's getting-started guide and left all settings at their defaults, what would fail — and under what condition would they first notice?
+**Framing question:** What fails when all framework settings are left at their getting-started defaults?
 
 ---
 
-### Concern 5: Load and connection behavior
-*Where behavior changes at scale or under concurrent load in ways that local testing doesn't reveal.*
-
-Look for: connection pool semantics, buffering decisions (what is held in memory vs. streamed), initialization timing (startup vs. first-use), behavior under concurrent requests.
-
-**Framing question:** If a developer tested with a single request at a time, what behavior would they assume that is actually wrong under concurrent or sustained load?
-
----
-
-### Concern 6: Security posture
+### Concern 5: Security 
 *Where standard practices leave gaps specific to this system's shape.*
 
 Look for: input validation that is deliberately limited or disabled, security measures that require multiple components to be effective, capability gating decisions, error response shaping to prevent information leakage.
 
-**Framing question:** If a developer added only standard input validation and relied on framework defaults, what attack surface would remain open that is specific to how this system processes input?
+**Framing question:** What attack surface remains after standard validation, given how this system specifically processes input?
+
+---
+
+Before applying Concerns 6 and 7, ask the user:
+
+> "Apply optional lenses?
+> - **Concern 6: Load and connection behavior** — connection pools, buffering, concurrency under load. Relevant for services with concurrent request handling.
+> - **Concern 7: Fan-out and pipeline resilience** — parallel subtasks, deduplication, rate limit exhaustion, partial failure recovery. Relevant for systems with recursive processing, parallel workers, or multi-step pipelines."
+
+Apply only the lenses the user confirms. Skip any the user declines and move to Step 3.
+
+### Concern 6: Load and connection behavior
+*Where behavior changes at scale or under concurrent load in ways that local testing doesn't reveal.*
+
+Look for: connection pool semantics, buffering decisions (what is held in memory vs. streamed), initialization timing (startup vs. first-use), behavior under concurrent requests.
+
+**Framing question:** What behavior is wrong under concurrent or sustained load but passes all single-request tests?
 
 ---
 
@@ -90,7 +98,7 @@ Look for: input validation that is deliberately limited or disabled, security me
 
 Look for: deduplication state shared (or not shared) across spawned instances, caching of external calls scoped to a pipeline run, concurrency controls sized to external API limits rather than local compute, checkpointing of intermediate results, semaphore + rate limiter combinations.
 
-**Framing question:** If a developer spawned subtasks independently — each with its own state, its own cache, its own concurrency limit — what would be duplicated, what would exhaust external rate limits, and what would be lost on a partial failure?
+**Framing question:** When subtasks each manage their own state and limits independently, what gets duplicated, what exhausts external rate limits, and what is lost on partial failure?
 
 This concern applies to any system with recursive processing, parallel workers, or multi-step pipelines — not just AI agents.
 
@@ -225,25 +233,9 @@ Aim for 15–30 lines.}
 
 ### plugin.json
 
-```json
-{
-  "name": "{practice-name}",
-  "description": "{same as SKILL.md frontmatter description — must contain TRIGGER when: clause}",
-  "author": "{auto-detected}",
-  "repository": "{auto-detected}",
-  "category": ["{suggested primary}", "{optional secondary}"],
-  "source": "{internal | external <url>}",
-  "commit_date": "{DD-MM-YYYY}",
-  "source_hash": "{short git hash | null}"
-}
-```
-
-Valid categories: `architecture`, `execution-control`, `state-memory`, `persistence`, `networking`, `tools`, `RAG`, `data-learning`, `security`, `monitoring-evaluation`, `operations-deployment`.
+Read `~/.prism/schemas/plugin.schema.json` for the authoritative field specification, required fields, valid category enum, and format patterns. Write one `plugin.json` per practice that validates against it.
 
 ---
 
-**Stripping rules — apply before writing:**
-- Remove all internal product names, class names, endpoint names, domain entities
-- Replace with generics: "cache layer", "session state", "agent node", "direct call path"
-- Keep: technology names (Redis, FastAPI, LangGraph, OpenAI), observable symptoms, design patterns
+**Stripping rules** — read `~/.prism/skills/_shared/stripping-rules.md` and apply before writing.
 

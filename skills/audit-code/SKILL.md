@@ -20,176 +20,92 @@ Use when the user wants to improve their codebase architecture by checking it ag
 
 ### Step 1 -- Resolve skill registry source
 
-Try to load a skill registry in this order. Stop at the first successful source.
+Read `~/.prism/skills/_shared/registry-fetch.md` and follow its instructions. It resolves all configured registries with ETag caching and local fallbacks, returning a skills array where each entry is tagged with `_registry`.
 
-**1a. All configured registries (preferred):**
-
-Fetch from ALL configured registries in `~/.prism/registries.json`, merge results, and tag each skill with its source registry name:
-
-```python
-python3 -c "
-import json, os, sys
-import urllib.request, urllib.error
-reg_path = os.path.expanduser('~/.prism/registries.json')
-cache_dir = os.path.expanduser('~/.prism/cache')
-try:
-    with open(reg_path) as f:
-        data = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    data = {'registries': []}
-# Fall back to config.json migration
-if not data.get('registries'):
-    cfg_path = os.path.expanduser('~/.prism/config.json')
-    try:
-        with open(cfg_path) as f:
-            cfg = json.load(f)
-        url = cfg.get('registry_url', '')
-        if url:
-            data = {'registries': [{'name': 'default', 'url': url, 'token': ''}]}
-    except: pass
-all_skills = []
-registry_reached = False
-for reg in data.get('registries', []):
-    name = reg['name']
-    url = reg['url'].rstrip('/')
-    token = os.environ.get('REGISTRY_TOKEN', reg.get('token', ''))
-    cache_path = os.path.join(cache_dir, f'{name}.json')
-    # Load cached data and ETag if available
-    cached = None
-    stored_etag = None
-    try:
-        if os.path.exists(cache_path):
-            with open(cache_path) as f:
-                cached = json.load(f)
-            stored_etag = cached.get('_etag')
-    except: pass
-    # Conditional GET — send If-None-Match if we have a cached ETag
-    try:
-        headers = {'User-Agent': 'Prism/1.0'}
-        if token:
-            headers['Authorization'] = f'Bearer {token}'
-        if stored_etag:
-            headers['If-None-Match'] = stored_etag
-        req = urllib.request.Request(f'{url}/api/skills/registry', headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                fetched = json.loads(resp.read().decode())
-                new_etag = resp.headers.get('ETag')
-            if fetched.get('skills'):
-                os.makedirs(cache_dir, exist_ok=True)
-                cache_data = dict(fetched)
-                if new_etag:
-                    cache_data['_etag'] = new_etag
-                tmp = cache_path + '.tmp'
-                with open(tmp, 'w') as f: json.dump(cache_data, f)
-                os.rename(tmp, cache_path)
-        except urllib.error.HTTPError as e:
-            if e.code == 304 and cached is not None:
-                fetched = cached  # 304 Not Modified — use cache
-            else:
-                raise
-        registry_reached = True
-        for s in fetched.get('skills', []):
-            s['_registry'] = name
-            all_skills.append(s)
-    except Exception as e:
-        print(f'Warning: could not reach {name}: {e}', file=sys.stderr)
-        if cached:
-            registry_reached = True
-            for s in cached.get('skills', []):
-                s['_registry'] = name
-                all_skills.append(s)
-if all_skills:
-    print(json.dumps(all_skills))
-elif registry_reached:
-    print('REGISTRY_EMPTY')
-else:
-    print('NO_REGISTRIES')
-"
-```
-
-If the result is valid JSON (an array of skills), use it as the skills list. Each skill has a `_registry` field indicating its source.
-
-If the result is `REGISTRY_EMPTY`, the registry was reached but has no skills yet. Skip fallback sources and go directly to Step 2.
-
-If the result is `NO_REGISTRIES`, no registry was configured or reachable. Proceed to fallback sources.
-
-**1b. Local skill-registry.json (fallback):**
-
-Check if `skill-registry.json` exists in the current project directory:
-
-```bash
-test -f skill-registry.json && echo "FOUND" || echo "NOT_FOUND"
-```
-
-If found, read it and use its `skills` array. Note in the output: "Using local skill-registry.json (no remote registry configured or reachable)."
-
-**1c. Local _analysis/ skills (fallback):**
-
-Check if `_analysis/extracted_skills_codebase/` has skill directories with `plugin.json`:
-
-```bash
-ls _analysis/extracted_skills_codebase/*/plugin.json 2>/dev/null | head -20
-```
-
-If found, build a temporary registry from the local `plugin.json` files:
-
-```python
-python3 << 'PYEOF'
-import json, os
-
-base = "_analysis/extracted_skills_codebase"
-skills = []
-for name in sorted(os.listdir(base)):
-    plugin_path = os.path.join(base, name, "plugin.json")
-    if os.path.isfile(plugin_path):
-        with open(plugin_path) as f:
-            skills.append(json.load(f))
-print(f"Built local registry from {len(skills)} extracted skill(s)")
-PYEOF
-```
-
-Note in the output: "Using local extracted skills (no remote registry or skill-registry.json available)."
-
-**1d. No source available:**
-
-If none of the above sources are available, tell the user:
-
-> **No skill registry available.** Options:
-> 1. Add a registry: `prism registry add NAME --url URL --token TOKEN`
-> 2. Place `skill-registry.json` in the project root
-> 3. Run `/extract-skills` (Claude Code) or `@extract-skills` (Cursor) to create local skills
-
-Then stop.
+Outcomes:
+- Valid JSON array → use as the skills list, proceed to Step 2
+- `REGISTRY_EMPTY` → registry reached but empty, proceed to Step 2
+- `NO_REGISTRIES` → no registry reachable, stop (the shared file handles the user message)
 
 ### Step 2 -- Check for empty registry
 
 If the `skills` array from the resolved source is empty, respond with: "No skills have been published to the registry yet." and stop.
 
-### Step 3 -- Analyse user codebase
+### Step 2.5 -- Check for existing analysis files
+
+Check which analysis files exist:
+
+```bash
+for f in _analysis/full_report.md _analysis/design.md _analysis/directives.md _analysis/incidents.md; do
+  test -f "$f" && echo "FOUND: $f" || echo "MISSING: $f"
+done
+```
+
+If **at least one file is found**, list them and ask the user:
+
+> "Found existing analysis files in `_analysis/`:
+> {list found files}
+>
+> Use these for matching, or run a fresh codebase scan?"
+
+- **Fresh scan chosen** → skip to Step 3, Path B.
+- **Use existing files chosen** → read all found files now (see table below), then continue to Step 3, Path A.
+- **No files found** → skip to Step 3, Path B.
+
+**What to extract from each found file:**
+
+| File | Extract |
+|---|---|
+| `full_report.md` | Tech stack, all architectural clusters, patterns present and absent |
+| `design.md` | Design decisions, trade-offs, non-obvious behaviors, structural anti-patterns |
+| `directives.md` | Known failure modes and rules derived from git history |
+| `incidents.md` | Incident patterns and what has broken historically |
+
+### Step 3 -- Build codebase summary
+
+**Path A — Targeted scan** (user chose to use existing files in Step 2.5)
+
+Each `_analysis/` file covers specific scan sections. Only scan sections whose covering file is **missing**.
+
+| Missing file | Scan sections required |
+|---|---|
+| `full_report.md` | Sections 1 and 5 (always) |
+| `full_report.md` AND `design.md` both missing | Also sections 2, 3, 4 — and sections 6–9 if agentic |
+| `directives.md` | Nothing to scan — this file comes from git history, not code |
+| `incidents.md` | Nothing to scan — this file comes from git history, not code |
+
+Run only the sections indicated. Ask the user whether the codebase is agentic before running sections 6–9.
+
+Section definitions:
+
+1. **Dependency manifests** (pyproject.toml, requirements.txt, package.json, go.mod) -- identify tech stack, frameworks, key dependencies.
+2. **Entry points** (main.py, app.py, index.ts, or files referenced in manifests) -- identify application structure, routing, execution flow.
+3. **State and data management** -- look for persistence layers, caching strategies, data flow.
+4. **Safety and security patterns** -- look for input validation, authentication, authorization, error handling.
+5. **Configuration and deployment** (docker-compose.yml, .env.example, CI/CD files) -- identify operational patterns.
+6. **LLM and orchestration stack** -- identify LLM provider SDKs, orchestration frameworks (LangChain, LangGraph, CrewAI, etc.), agent execution flow. *(agentic only)*
+7. **Tool definitions and use** -- look for tool/function definitions, calling patterns, result handling. *(agentic only)*
+8. **Context and memory management** -- look for conversation history handling, context window strategies, memory persistence. *(agentic only)*
+9. **Agentic safety patterns** -- look for prompt injection defenses, output validation, authentication on tool calls. *(agentic only)*
+
+---
+
+**Path B — Full scan** (no existing files, or user chose fresh scan)
 
 Ask the user:
 
 > "Is this an agentic codebase (uses LLMs, tools, or AI orchestration)?"
 
-Wait for the user's response, then perform a lightweight architectural scan. Read:
+Wait for the user's response, then run all sections:
 
-**For all codebases:**
+- Sections 1–5 for all codebases.
+- Sections 6–9 additionally if the codebase is agentic.
 
-1. **Dependency manifests** (pyproject.toml, requirements.txt, package.json, go.mod) -- identify the tech stack, frameworks, and key dependencies.
-2. **Entry points** (main.py, app.py, index.ts, or files referenced in manifests) -- identify application structure, routing, and execution flow.
-3. **State and data management** -- look for persistence layers, caching strategies, and how data flows through the system.
-4. **Safety and security patterns** -- look for input validation, authentication, authorization, and error handling.
-5. **Configuration and deployment** (docker-compose.yml, .env.example, CI/CD files) -- identify operational patterns.
+Section definitions are the same as Path A above.
 
-**Additionally, if the user confirmed the codebase is agentic:**
+---
 
-6. **LLM and orchestration stack** -- identify LLM provider SDKs, orchestration frameworks (LangChain, LangGraph, CrewAI, etc.), and agent execution flow.
-7. **Tool definitions and use** -- look for tool/function definitions, tool calling patterns, and how results are handled.
-8. **Context and memory management** -- look for conversation history handling, context window strategies, and memory/state persistence across turns.
-9. **Agentic safety patterns** -- look for prompt injection defenses, output validation, and authentication on tool calls.
-
-Produce a concise internal summary of: what the code does, which architectural patterns are present, and which concerns are addressed or absent. This summary is not shown to the user -- it is used in Step 4 for matching.
+After reading files (Path A) and running any required scan sections, produce a concise internal codebase summary: what the code does, which architectural patterns are present, and which concerns are addressed or absent. This summary is not shown to the user -- it is used in Step 4 for matching.
 
 ### Step 4 -- Match codebase to skills in registry
 

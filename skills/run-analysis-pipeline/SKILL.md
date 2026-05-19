@@ -86,19 +86,13 @@ If the state file already has a `mode` field, skip to Step 3.
 
 Otherwise, ask:
 
-> "Is this codebase **agentic** (uses LLMs, tools, or an agent framework like LangGraph, AutoGen, CrewAI, etc.) or **general-purpose** (a web API, CLI, background worker, data pipeline, etc.)?
->
-> This determines which analysis path to run:
-> - **Agentic** → `/analyze-agent-codebase` (Claude Code) or `@analyze-agent-codebase` (Cursor), then `/extract-skills` (Claude Code) or `@extract-skills` (Cursor)
-> - **General** → `/mine-design` (Claude Code) or `@mine-design` (Cursor), then `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor)"
+> "Is this codebase **agentic** (uses LLMs, tools, or an agent framework) or **general-purpose** (web API, CLI, background worker, data pipeline)?"
 
 Wait for their response. Accept `agentic`, `agent`, `yes`, or `y` as agentic.
 
 **If agentic**, ask a follow-up:
 
-> "Also run **extended analysis** (`/mine-design` (Claude Code) or `@mine-design` (Cursor) → `/synthesize-decisions` (Claude Code) or `@synthesize-decisions` (Cursor)) to extract general architecture practices from supporting infrastructure (API layer, storage, auth, queues)?
->
-> [y/N] — adds 2 more steps, clearing context between each (`/clear` in Claude Code, or clear context in Cursor)"
+> "Also run **extended analysis** (mine-design → synthesize-decisions) to extract architecture practices from supporting infrastructure (API layer, storage, auth, queues)? [y/N] — adds 2 more steps."
 
 Accept `y`, `yes`, or `extended` for extended mode. Default is `n`.
 

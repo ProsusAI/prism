@@ -11,7 +11,30 @@ Snapshot-based design decisions for any codebase. Extract the reasoning behind c
 
 ## Step 1 — Orient
 
-Read the codebase's self-description:
+Check if `_analysis/index.md` already exists:
+
+```bash
+test -f _analysis/index.md && echo "FOUND" || echo "NOT_FOUND"
+```
+
+**If `_analysis/index.md` exists:** Also check for cluster files:
+
+```bash
+ls _analysis/cluster_*.md 2>/dev/null
+```
+
+Then ask the user:
+
+> "Found existing analysis files in `_analysis/`:
+> - `index.md`
+> {- `cluster_*.md` (list found files, if any)}
+>
+> Use these for orientation, or run a fresh codebase scan? (Files may be outdated if the code has changed.)"
+
+- **Use existing** → Read `_analysis/index.md`. It contains the directory map, framework, entry points, and key file registry. Use it as your structural map and skip the bash commands below — go directly to the `_analysis/directives.md` check.
+- **Fresh scan** → Run the bash commands below.
+
+**If `_analysis/index.md` does not exist:** Run the following to build a structural picture from scratch:
 
 ```bash
 cat README.md 2>/dev/null || cat readme.md 2>/dev/null
@@ -27,6 +50,8 @@ Check if `_analysis/directives.md` already exists. If it does, skim it to note w
 ## Step 2 — Discover subsystems
 
 From the directory structure and README, identify **4–8 major subsystems or concerns**. Before proposing clusters, read at least one entry-point file (main file, index, CLI root, or server start) to confirm the runtime structure matches the directory structure.
+
+**If the user chose to use existing files in Step 1** and cluster files were found, skim them to extract subsystem names and their assigned files. Use these as the starting point — adjust or merge only where the cluster divisions do not map cleanly to design concerns.
 
 Examples by system type:
 - Job queue: "Queue Engine", "Concurrency Manager", "Tenant Dispatch", "Worker Pool"
@@ -240,11 +265,7 @@ Omit this section entirely if Phase 3c found none.
 ## Quality checks before finishing
 
 - [ ] Every decision entry is non-obvious — would a competent developer arriving cold arrive at this without production experience?
-- [ ] Every trade-off has stated structural consequences
-- [ ] Every non-obvious behavior has a `file:line — \`quoted_snippet\`` evidence reference (not just a pointer)
-- [ ] Every decision has a `file:line — \`quoted_snippet\`` evidence reference (not just a pointer)
 - [ ] Every structural anti-pattern identifies a production failure mode, not just a style concern
-- [ ] No directive-style or historical-evolution content mixed in
 - [ ] Phase 3a probe findings were written before Phase 3b synthesis — synthesis came from findings, not from the expectation of findings
 - [ ] Each subsystem section was written and source files released before moving to the next subsystem
 - [ ] Phase 3c (cross-subsystem synthesis) ran — either assembled patterns are recorded in `## Architectural patterns`, or "none" was explicitly noted

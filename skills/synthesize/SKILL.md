@@ -251,28 +251,11 @@ Teams building {X} with {technology}. These decisions are non-obvious without pr
 
 ### plugin.json
 
-```json
-{
-  "name": "{practice-name}",
-  "description": "{same as SKILL.md frontmatter description — must contain TRIGGER when: clause}",
-  "author": "{auto-detected}",
-  "repository": "{auto-detected}",
-  "category": ["{suggested primary}", "{optional secondary}"],
-  "source": "{internal | external <url>}",
-  "commit_date": "{DD-MM-YYYY}",
-  "source_hash": "{short git hash | null}"
-}
-```
-
-Valid categories: `architecture`, `execution-control`, `state-memory`, `persistence`, `networking`, `tools`, `RAG`, `data-learning`, `security`, `monitoring-evaluation`, `operations-deployment`.
+Read `~/.prism/schemas/plugin.schema.json` for the authoritative field specification, required fields, valid category enum, and format patterns. Write one `plugin.json` per practice that validates against it.
 
 ---
 
-**Stripping rules — apply before writing:**
-- Remove all internal product names, class names, table names, domain concepts
-- Replace with generics: "job queue", "task runner", "order", "user", "record"
-- Keep: technology names (Redis, Postgres, Celery), general patterns, observable symptoms, fix mechanics
-- Use month+year for dates, never full commit hashes
+**Stripping rules** — read `~/.prism/skills/_shared/stripping-rules.md` and apply before writing.
 
 ---
 
