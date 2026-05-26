@@ -280,39 +280,41 @@ def main() -> None:
 
 
 def _cmd_query_sessions(args, project_id: str) -> None:
-    """Search session content via SQLite FTS5."""
-    from .sessions import list_all_sessions, list_cursor_sessions, list_sessions
+    """Search observations via SQLite FTS5."""
+    from datetime import datetime
     from .search import search_sessions
 
-    list_func = {
-        "claude": list_sessions,
-        "cursor": list_cursor_sessions,
-        "all": list_all_sessions,
-    }.get(args.source, list_all_sessions)
+    ts_from = None
+    if args.since:
+        try:
+            ts_from = int(datetime.strptime(args.since, "%Y-%m-%d").timestamp())
+        except ValueError:
+            print(f"Invalid --since date: {args.since!r}. Expected YYYY-MM-DD.")
+            return
 
-    sessions = list_func(
-        project_filter=None if args.all_projects else project_id,
-        since_date=args.since,
-        last_n=args.last,
+    limit = args.last if args.last else 10
+    scope_parts = []
+    if args.since:
+        scope_parts.append(f"since {args.since}")
+    if args.last:
+        scope_parts.append(f"limit {args.last}")
+    scope = f" ({', '.join(scope_parts)})" if scope_parts else ""
+    print(f"Searching observations{scope} for: {args.query!r}\n")
+
+    results = search_sessions(
+        args.query,
+        project_id=None if args.all_projects else project_id,
+        limit=limit,
+        ts_from=ts_from,
     )
-
-    if not sessions:
-        print("No sessions found for this project.")
-        return
-
-    n = len(sessions)
-    scope = f"last {n}" if args.last else str(n)
-    print(f"Searching {scope} sessions for: {args.query!r}\n")
-
-    results = search_sessions(sessions, args.query, project_id)
 
     if not results:
         print("No matches found.")
         return
 
     for i, r in enumerate(results, 1):
-        name = os.path.basename(r["cwd"].rstrip("/")) if r["cwd"] else r["session_id"][:8]
-        print(f"{i}. {r['date']}  {name}  ({r['session_id'][:8]}...)")
+        ts_str = datetime.fromtimestamp(r["ts"]).strftime("%Y-%m-%d %H:%M")
+        print(f"{i}. obs:{r['id']}  session:{r['session_id'][:12]}  {ts_str}")
         print(f"   {r['snippet']}\n")
 
 

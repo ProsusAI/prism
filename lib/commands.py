@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Optional
 
 from .config import PRISM_HOME, get_config, get_engrams_dir, ensure_dirs
+from .storage import (
+    count_active,
+    count_active_insights,
+    delete_observations_for_project,
+    get_recent,
+    get_insights,
+)
 from .index import (
     add_entry,
     build_index_entry,
@@ -20,7 +27,14 @@ from .index import (
     save_index,
     update_confidence,
 )
-from .project import detect_project_id, detect_project_name, get_project_root
+from .frontmatter import update_frontmatter
+from .project import (
+    cached_project_id_path,
+    capture_hook_command,
+    detect_project_id,
+    detect_project_name,
+    get_project_root,
+)
 
 
 def cmd_init() -> None:
@@ -40,7 +54,7 @@ def cmd_init() -> None:
 
     # Write project ID cache for hook performance (OBS-05)
     if project_id != "global":
-        cache_path = get_project_root() / ".claude" / ".prism_project_id"
+        cache_path = cached_project_id_path()
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(project_id + "\n")
 
@@ -109,19 +123,20 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
             pass
 
     hooks = local.get("hooks", {})
-    capture_cmd = str(PRISM_HOME / "hooks" / "capture.sh")
+    capture_script = str(PRISM_HOME / "hooks" / "capture.sh")
+    pre_command = capture_hook_command(capture_script, "pre", project_id)
 
-    for event, phase_arg in [("PreToolUse", "pre")]:
-        hook_entry = {
+    for event in ("PreToolUse",):
+        hook_groups = hooks.get(event, [])
+        hook_groups = [
+            g for g in hook_groups
+            if not any(capture_script in h.get("command", "") for h in g.get("hooks", []))
+        ]
+        hook_groups.append({
             "matcher": "*",
-            "hooks": [{"type": "command", "command": "{} {}".format(capture_cmd, phase_arg)}],
-        }
-        if event not in hooks:
-            hooks[event] = [hook_entry]
-        else:
-            existing_cmds = {h.get("command", "") for g in hooks[event] for h in g.get("hooks", [])}
-            if hook_entry["hooks"][0]["command"] not in existing_cmds:
-                hooks[event].append(hook_entry)
+            "hooks": [{"type": "command", "command": pre_command}],
+        })
+        hooks[event] = hook_groups
 
     # SessionStart: run decay maintenance once per session
     maintain_cmd = str(PRISM_HOME / "prism") + " maintain --quiet"
@@ -162,14 +177,37 @@ def _setup_cursor_hooks_and_mcp(project_id: str) -> None:
             pass
 
     hooks = settings.get("hooks", {})
-    capture_cmd = str(PRISM_HOME / "hooks" / "capture_cursor.sh")
-    for event, phase_arg in [("preToolUse", "pre"), ("postToolUse", "post")]:
-        command = f"{capture_cmd} {phase_arg}"
-        entries = hooks.get(event, [])
-        existing_cmds = {entry.get("command", "") for entry in entries if isinstance(entry, dict)}
-        if command not in existing_cmds:
-            entries.append({"command": command})
-        hooks[event] = entries
+    capture_script = str(PRISM_HOME / "hooks" / "capture_cursor.sh")
+    pre_command = capture_hook_command(
+        capture_script,
+        "pre",
+        project_id,
+        extra_env={"PRISM_SOURCE": "cursor"},
+    )
+
+    # One observation per tool call (matches Claude Code PreToolUse-only).
+    post_entries = hooks.get("postToolUse", [])
+    post_entries = [
+        e for e in post_entries
+        if not (isinstance(e, dict) and capture_script in e.get("command", ""))
+    ]
+    if post_entries:
+        hooks["postToolUse"] = post_entries
+    else:
+        hooks.pop("postToolUse", None)
+
+    pre_entries = [
+        e for e in hooks.get("preToolUse", [])
+        if not (
+            isinstance(e, dict)
+            and (
+                capture_script in e.get("command", "")
+                or f"{capture_script} post" == e.get("command", "")
+            )
+        )
+    ]
+    pre_entries.append({"command": pre_command})
+    hooks["preToolUse"] = pre_entries
 
     settings["hooks"] = hooks
     settings_path.write_text(json.dumps(settings, indent=2) + "\n")
@@ -385,15 +423,15 @@ def cmd_status(project_id: Optional[str] = None) -> None:
 
     # Observations count
     print()
-    obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
-    if obs_path.exists():
-        with open(obs_path) as f:
-            obs_count = sum(1 for _ in f)
-        config = get_config()
-        threshold = config.get("extract_threshold", 15)
-        print(f"  Observations: {obs_count} pending (extract at {threshold})")
-    else:
-        print("  Observations: 0 pending")
+    backlog = count_active(project_id)
+    toward_extract = count_active(project_id, for_triggers=True)
+    insights = count_active_insights(project_id)
+    config = get_config()
+    threshold = config.get("extract_threshold", 15)
+    line = f"  Observations: {backlog} pending ({toward_extract} toward extract at {threshold})"
+    if insights:
+        line += f", {insights} insight(s)"
+    print(line)
 
     # Archived count
     archive_dir = PRISM_HOME / "archive"
@@ -585,25 +623,6 @@ tags: [manual, correction]
     print(f"Corrected: {entry_id} -> {new_id} (confidence: 0.9)")
 
 
-def _update_frontmatter_confidence(path: Path, new_conf: float) -> None:
-    """Rewrite the confidence: line in a markdown file's YAML frontmatter."""
-    try:
-        text = path.read_text()
-        lines = text.splitlines(keepends=True)
-        in_frontmatter = False
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped == "---":
-                in_frontmatter = not in_frontmatter
-                continue
-            if in_frontmatter and stripped.startswith("confidence:"):
-                lines[i] = f"confidence: {round(new_conf, 3)}\n"
-                break
-        path.write_text("".join(lines))
-    except OSError:
-        pass
-
-
 def cmd_maintain(quiet: bool = False) -> None:
     """Run confidence decay, archive low-confidence entries, delete zeroed archive entries."""
     def log(msg: str) -> None:
@@ -672,13 +691,16 @@ def cmd_maintain(quiet: bool = False) -> None:
             source_path = PRISM_HOME / entry.get("path", "")
             if entry.get("path") and source_path.is_file():
                 archive_dir.mkdir(parents=True, exist_ok=True)
-                _update_frontmatter_confidence(source_path, new_conf)
+                update_frontmatter(source_path, {"confidence": new_conf})
                 shutil.move(str(source_path), str(archive_dir / source_path.name))
             to_archive_ids.add(entry["id"])
             archived += 1
             log(f"  Archived: {entry['id']} (confidence: {old_conf:.2f} -> {new_conf:.2f})")
         elif new_conf < old_conf:
             entry["confidence"] = round(new_conf, 3)
+            source_path = PRISM_HOME / entry.get("path", "")
+            if entry.get("path") and source_path.is_file():
+                update_frontmatter(source_path, {"confidence": new_conf})
             decayed += 1
 
     if to_archive_ids or decayed > 0:
@@ -869,9 +891,19 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
         shutil.rmtree(project_dir)
         print(f"  Deleted ~/.prism/projects/{project_id}/")
 
+    deleted_obs = delete_observations_for_project(project_id)
+    if deleted_obs:
+        print(f"  Deleted {deleted_obs} observation(s) from prism.db")
+
     # Clear extraction lock if it belongs to this project
     lock = PRISM_HOME / ".extracting"
     lock.unlink(missing_ok=True)
+
+    try:
+        from .trigger import clear_extract_pending
+        clear_extract_pending(project_id)
+    except Exception:
+        pass
 
     # Remove index entries for this project
     index = load_index()
@@ -943,6 +975,7 @@ def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:
 
     print(f"This will delete all Prism data for {project_name} ({project_id}):")
     print(f"  {project_dir}/  (engrams, observations, candidates, archive)")
+    print(f"  Observations in ~/.prism/prism.db for this project")
     print(f"  {prism_md}  (context file)")
     print(f"  Session tracker entries for this project")
 
@@ -959,6 +992,10 @@ def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:
     # Remove project data dir
     if project_dir.exists():
         shutil.rmtree(project_dir)
+
+    deleted_obs = delete_observations_for_project(project_id)
+    if deleted_obs:
+        print(f"  Deleted {deleted_obs} observation(s) from prism.db")
 
     # Remove context file
     if prism_md.exists():
@@ -984,6 +1021,12 @@ def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:
                 f.write("\n")
         except (json.JSONDecodeError, OSError):
             pass
+
+    try:
+        from .trigger import clear_extract_pending
+        clear_extract_pending(project_id)
+    except Exception:
+        pass
 
     print(f"\nReset complete. Run 'prism init' then 'prism analyze-sessions' to start fresh.")
 
@@ -1061,49 +1104,33 @@ def cmd_log(last_n: int = 20, extractions: bool = False, insights: bool = False,
         return
 
     project_id = detect_project_id()
-    obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
-    if not obs_path.exists():
-        if json_output:
-            return  # No output in JSON mode
-        print("No observations yet. Start using Claude Code tools -- they'll be captured automatically.")
-        return
+    rows = get_recent(project_id, last_n=last_n)
 
-    content = obs_path.read_text().strip()
-    if not content:
+    if not rows:
         if not json_output:
             print("No observations yet. Start using Claude Code tools -- they'll be captured automatically.")
         return
 
-    lines = content.split("\n")
-    recent = lines[-last_n:]
-
     if json_output:
-        # Raw JSONL output (D-12 --json flag)
-        for line in recent:
-            print(line)
+        for row in rows:
+            print(json.dumps(row))
         return
 
     # Human-readable formatted table (D-12 default)
-    print("\033[1mRecent observations\033[0m (last {} of {})".format(
-        min(last_n, len(recent)), len(lines)))
+    print("\033[1mRecent observations\033[0m (last {})".format(len(rows)))
     print()
     print("  {:<20} {:<12} {:<15} Summary".format("Timestamp", "Event", "Tool"))
     print("  {} {} {} {}".format(
         "\u2500" * 20, "\u2500" * 12, "\u2500" * 15, "\u2500" * 40))
 
-    for line in recent:
-        try:
-            entry = json.loads(line)
-            ts = entry.get("timestamp", "?")[:19]
-            event = entry.get("event", "?")
-            tool = entry.get("tool", "?")
-            summary = entry.get("input_summary", "")[:50]
-            print("  {:<20} {:<12} {:<15} {}".format(ts, event, tool, summary))
-        except json.JSONDecodeError:
-            continue
+    for row in rows:
+        ts = datetime.fromtimestamp(row["ts"]).strftime("%Y-%m-%dT%H:%M:%S")
+        print("  {:<20} {:<12} {:<15} {}".format(
+            ts, row.get("event", "?"), row.get("tool", "?"),
+            (row.get("input_summary") or "")[:50]))
 
     print()
-    print("  Use --json for raw JSONL output, --insights for session review findings, --rejected for rejections.")
+    print("  Use --json for raw output, --insights for session review findings, --rejected for rejections.")
 
 
 def _log_rejected(last_n: int, json_output: bool = False) -> None:
@@ -1181,44 +1208,20 @@ def _log_extractions(last_n: int) -> None:
 def _log_insights(last_n: int) -> None:
     """Show session review insights."""
     project_id = detect_project_id()
-    obs_path = PRISM_HOME / "projects" / project_id / "observations.jsonl"
-    archive_dir = PRISM_HOME / "projects" / project_id / "observations.archive"
-    all_insights = []
-    for path in _collect_observation_files(obs_path, archive_dir):
-        try:
-            with open(path) as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        if entry.get("event") == "session_insight":
-                            all_insights.append(entry)
-                    except json.JSONDecodeError:
-                        continue
-        except OSError:
-            continue
-    if not all_insights:
+    rows = get_insights(project_id, last_n=last_n)
+    if not rows:
         print("No session insights found. Run 'prism review --session <id>' to generate.")
         return
-    print("Session insights ({} total):\n".format(len(all_insights)))
-    for entry in all_insights[-last_n:]:
-        ts = entry.get("timestamp", "?")[:10]
-        kind = entry.get("insight_type", "unknown")
-        summary = entry.get("input_summary", "")
-        evidence = entry.get("evidence", "")
-        print("  [{}] {}".format(kind, summary))
+    print("Session insights ({}):\n".format(len(rows)))
+    for row in rows:
+        ts = datetime.fromtimestamp(row["ts"]).strftime("%Y-%m-%d")
+        kind = row.get("insight_type") or "unknown"
+        summary = row.get("input_summary") or ""
+        evidence = row.get("evidence") or ""
+        print("  [{}] {}  {}".format(kind, ts, summary))
         if evidence:
             print("    evidence: {}".format(evidence[:120]))
         print()
-
-
-def _collect_observation_files(current: Path, archive_dir: Path) -> list:
-    """Collect current + archived observation files, oldest first."""
-    files = []
-    if archive_dir.exists():
-        files.extend(sorted(archive_dir.glob("observations_*.jsonl")))
-    if current.exists():
-        files.append(current)
-    return files
 
 
 def cmd_registry(args) -> None:

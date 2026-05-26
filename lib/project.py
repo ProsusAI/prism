@@ -8,18 +8,54 @@ from pathlib import Path
 _project_root_cache: str = ""
 
 
+def cached_project_id_path() -> Path:
+    """Path to the project ID cache written by ``prism init``."""
+    return get_project_root() / ".claude" / ".prism_project_id"
+
+
+def read_cached_project_id() -> str:
+    """Return cached project ID from ``.claude/.prism_project_id``, or \"\"."""
+    path = cached_project_id_path()
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return ""
+
+
+def capture_hook_command(
+    hook_script: str,
+    phase: str,
+    project_id: str,
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> str:
+    """Shell command for PreToolUse capture with ``PRISM_PROJECT_ID`` set."""
+    env = {"PRISM_PROJECT_ID": project_id}
+    if extra_env:
+        env.update(extra_env)
+    assignments = " ".join(f"{key}={value}" for key, value in env.items())
+    return f"env {assignments} {hook_script} {phase}"
+
+
 def detect_project_id() -> str:
-    """Detect project ID from git remote, repo path, or env var.
+    """Detect project ID from env, init cache, or git metadata.
 
     Priority:
     1. PRISM_PROJECT_ID env var
-    2. SHA256[:12] of git remote origin URL (portable across machines)
-    3. SHA256[:12] of git repo root path (machine-specific fallback)
-    4. "global" (no project detected)
+    2. ``.claude/.prism_project_id`` at the git repo root (from ``prism init``)
+    3. SHA256[:12] of git remote origin URL (portable across machines)
+    4. SHA256[:12] of git repo root path (machine-specific fallback)
+    5. ``global`` (no project detected)
     """
     env_id = os.environ.get("PRISM_PROJECT_ID")
     if env_id:
         return env_id
+
+    cached = read_cached_project_id()
+    if cached:
+        return cached
 
     remote_url = _git_remote_url()
     if remote_url:

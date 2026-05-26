@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prism capture hook for Cursor
-# Registered as preToolUse hook in .cursor/settings.json
+# Registered as preToolUse-only hook in .cursor/settings.json (one obs per tool call)
 #
 # Receives JSON on stdin from Cursor Agent.
 # Pipes directly to a single Python process.
@@ -11,9 +11,6 @@ set -euo pipefail
 PRISM_HOME="${PRISM_HOME:-$HOME/.prism}"
 PHASE="${1:-pre}"
 
-# Guard: don't capture during extraction
-[ -f "$PRISM_HOME/.extracting" ] && exit 0
-
-PRISM_SOURCE=cursor python3 "$PRISM_HOME/lib/capture.py" "$PHASE" 2>/dev/null || true
+PRISM_SOURCE=cursor python3 "$PRISM_HOME/lib/capture.py" "$PHASE" >>"$PRISM_HOME/capture.log" 2>&1 || true
 
 exit 0

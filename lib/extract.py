@@ -13,11 +13,18 @@ from .config import (
     get_candidates_dir,
     get_config,
     get_engrams_dir,
-    get_observations_path,
     get_project_dir,
     ensure_dirs,
 )
-from .index import add_entry, build_index_entry, load_index, remove_entry
+from .storage import count_active, get_active, mark_extracted, purge_old
+from .index import (
+    add_entry,
+    build_index_entry,
+    get_entry,
+    load_index,
+    merge_file_entry_with_index,
+    remove_entry,
+)
 
 
 def _find_agent_prompt(filename: str):
@@ -33,6 +40,37 @@ def _find_agent_prompt(filename: str):
     return None
 
 
+def _batch_ids_path(project_id: str) -> Path:
+    """Sidecar listing observation row ids exported for the current extraction."""
+    return get_project_dir(project_id) / ".extract_obs_ids.json"
+
+
+def _save_batch_ids(project_id: str, observation_ids: list[int]) -> None:
+    path = _batch_ids_path(project_id)
+    path.write_text(json.dumps({"observation_ids": observation_ids}) + "\n")
+
+
+def _load_batch_ids(project_id: str) -> list[int] | None:
+    path = _batch_ids_path(project_id)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        ids = data.get("observation_ids")
+        if isinstance(ids, list) and all(isinstance(i, int) for i in ids):
+            return ids
+    except (json.JSONDecodeError, OSError, TypeError):
+        pass
+    return None
+
+
+def _clear_batch_ids(project_id: str) -> None:
+    try:
+        _batch_ids_path(project_id).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def run_extraction(project_id: str) -> dict:
     """Run the full extraction + validation pipeline.
 
@@ -40,6 +78,7 @@ def run_extraction(project_id: str) -> dict:
     """
     ensure_dirs(project_id)
     lock = PRISM_HOME / ".extracting"
+    batch_ids: list[int] | None = None
 
     try:
         # Clear stale lock (> 10 minutes old = crashed extraction)
@@ -63,19 +102,39 @@ def run_extraction(project_id: str) -> dict:
         if existing_candidates:
             print(f"Resuming: {len(existing_candidates)} candidates from previous run, skipping phase 1.")
             n_candidates = len(existing_candidates)
+            batch_ids = _load_batch_ids(project_id)
+            if batch_ids is None:
+                print(
+                    "Warning: no extraction batch file; rotation will mark "
+                    "current active observations only if validation completes."
+                )
         else:
-            n_candidates = _phase1_extract(project_id)
+            n_candidates, batch_ids = _phase1_extract(project_id)
+            if n_candidates < 0:
+                _clear_batch_ids(project_id)
+                # Hard failure (subprocess error, CLI missing, timeout) — preserve
+                # observations so the next extraction cycle can retry them.
+                return {"extracted": 0, "approved": 0, "rejected": 0, "modified": 0}
             if n_candidates == 0:
-                _rotate_observations(project_id)
+                # Haiku ran but found nothing worth capturing — mark batch as processed.
+                if batch_ids:
+                    _rotate_observations(project_id, batch_ids)
                 return {"extracted": 0, "approved": 0, "rejected": 0, "modified": 0}
 
         # Phase 2: Sonnet validates candidates
-        results = _phase2_validate(project_id)
+        snapshot = _take_validation_snapshot(project_id)
+        results = _phase2_validate(project_id, snapshot)
         results["extracted"] = n_candidates
 
-        # Only rotate observations if phase 2 produced a meaningful result
-        phase2_ran = results.get("approved", 0) + results.get("rejected", 0) + results.get("modified", 0) > 0
-        _apply_validation_results(project_id, results, rotate=phase2_ran or not existing_candidates)
+        rotate = _should_rotate_observations(results, n_candidates, project_id)
+        if results.get("parse_failed"):
+            print(
+                "Warning: validation JSON could not be parsed; "
+                "observations kept unless all candidates were resolved on disk."
+            )
+        _apply_validation_results(
+            project_id, results, rotate=rotate, observation_ids=batch_ids,
+        )
 
         # Post-extraction: sync .claude/prism.md with new engrams (EXT-05, CTX-04)
         try:
@@ -87,14 +146,47 @@ def run_extraction(project_id: str) -> dict:
         return results
     finally:
         lock.unlink(missing_ok=True)
+        try:
+            from .trigger import clear_extract_pending
+            clear_extract_pending(project_id)
+        except Exception:
+            pass
 
 
-def _phase1_extract(project_id: str) -> int:
-    """Run Haiku extraction on observations. Returns count of candidates created."""
-    observations_path = get_observations_path(project_id)
-    if not observations_path.exists() or observations_path.stat().st_size == 0:
+def _normalize_obs(obs: dict) -> dict:
+    """Remap SQLite column names to human-readable keys for the Haiku temp file."""
+    summary = obs.get("input_summary", "")
+    try:
+        from .expand import expand
+        summary = expand(summary)
+    except Exception:
+        pass
+    return {
+        "timestamp": datetime.fromtimestamp(obs["ts"], tz=timezone.utc).isoformat()
+                     if obs.get("ts") else "",
+        "session": obs.get("session_id", ""),
+        "event": obs.get("event", ""),
+        "tool": obs.get("tool", ""),
+        "input_summary": summary,
+        "project_id": obs.get("project_id", ""),
+        "source": obs.get("source", ""),
+        "insight_type": obs.get("insight_type"),
+        "evidence": obs.get("evidence"),
+    }
+
+
+def _phase1_extract(project_id: str) -> tuple[int, list[int] | None]:
+    """Run Haiku extraction on observations.
+
+    Returns (candidate_count, batch_observation_ids). ``batch_observation_ids``
+  is the set exported to Haiku; rotation must only mark these rows.
+    """
+    import tempfile
+
+    obs_count = count_active(project_id)
+    if obs_count == 0:
         print("No observations to process.")
-        return 0
+        return 0, None
 
     candidates_dir = get_candidates_dir(project_id)
     index_path = PRISM_HOME / "index.json"
@@ -102,58 +194,81 @@ def _phase1_extract(project_id: str) -> int:
 
     if not extractor_prompt_path:
         print("Error: extractor prompt not found. Run ./install.sh to set up.")
-        return 0
-
-    # Count observations
-    with open(observations_path) as f:
-        obs_count = sum(1 for _ in f)
+        return -1, None
 
     config = get_config()
     threshold = config.get("extract_threshold", 15)
     print(f"Found {obs_count} observations (threshold: {threshold})")
 
-    # Build the prompt for Haiku
-    prompt = f"""Read the extractor instructions at {extractor_prompt_path}.
+    # Export active observations to a temp JSONL file for Haiku to read
+    observations = get_active(project_id)
+    batch_ids = [int(obs["id"]) for obs in observations if obs.get("id") is not None]
+    _save_batch_ids(project_id, batch_ids)
+
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".jsonl", prefix="prism_obs_")
+    observations_path = Path(tmp_name)
+    try:
+        with os.fdopen(tmp_fd, "w") as tmp:
+            for obs in observations:
+                tmp.write(json.dumps(_normalize_obs(obs)) + "\n")
+
+        # Build the prompt for Haiku
+        prompt = f"""Read the extractor instructions at {extractor_prompt_path}.
 Analyze the observations at {observations_path}.
 Current knowledge index: {index_path}.
 Write candidate files to {candidates_dir}/. Project ID: {project_id}.
 No output text. Write files only.
 """
 
-    # Run claude --print --model haiku
-    try:
-        result = subprocess.run(
-            ["claude", "--print", "--model", "haiku", "-p", prompt,
-             "--allowedTools", "Read,Write,Glob,Grep"],
-            capture_output=True, text=True, timeout=300,
-            cwd=str(PRISM_HOME),
-        )
-        if result.returncode != 0:
-            msg = result.stderr[:500]
-            print(f"Extraction failed: {msg}")
-            _log_extract_error(stage="haiku_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
-            return 0
-    except FileNotFoundError:
-        print("Error: 'claude' CLI not found. Install Claude Code to use extraction.")
-        _log_extract_error(stage="haiku_subprocess", reason="claude CLI not found")
-        return 0
-    except subprocess.TimeoutExpired:
-        print("Extraction timed out (120s limit).")
-        _log_extract_error(stage="haiku_subprocess", reason="timeout after 300s")
-        return 0
+        # Run claude --print --model haiku
+        try:
+            result = subprocess.run(
+                ["claude", "--print", "--model", "haiku", "-p", prompt,
+                 "--allowedTools", "Read,Write,Glob,Grep"],
+                capture_output=True, text=True, timeout=300,
+                cwd=str(PRISM_HOME),
+            )
+            if result.returncode != 0:
+                msg = result.stderr[:500]
+                print(f"Extraction failed: {msg}")
+                _log_extract_error(stage="haiku_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
+                _clear_batch_ids(project_id)
+                return -1, None
+        except FileNotFoundError:
+            print("Error: 'claude' CLI not found. Install Claude Code to use extraction.")
+            _log_extract_error(stage="haiku_subprocess", reason="claude CLI not found")
+            _clear_batch_ids(project_id)
+            return -1, None
+        except subprocess.TimeoutExpired:
+            print("Extraction timed out (300s limit).")
+            _log_extract_error(stage="haiku_subprocess", reason="timeout after 300s")
+            _clear_batch_ids(project_id)
+            return -1, None
+    finally:
+        observations_path.unlink(missing_ok=True)
 
     # Count candidates created
     candidates = list(candidates_dir.glob("*.md"))
     print(f"Extraction complete: {len(candidates)} candidates created")
-    return len(candidates)
+    return len(candidates), batch_ids
 
 
-def _phase2_validate(project_id: str) -> dict:
+def _take_validation_snapshot(project_id: str) -> dict:
+    """Capture engram/candidate filenames before phase 2 file operations."""
+    engrams_dir = get_engrams_dir(project_id)
+    candidates_dir = get_candidates_dir(project_id)
+    return {
+        "engrams_before": {p.name for p in engrams_dir.glob("*.md")},
+        "candidates_before": {p.name for p in candidates_dir.glob("*.md")},
+    }
+
+
+def _phase2_validate(project_id: str, snapshot: dict) -> dict:
     """Run Sonnet validation on candidates. Returns results dict."""
     candidates_dir = get_candidates_dir(project_id)
     candidates = list(candidates_dir.glob("*.md"))
     if not candidates:
-        return {"approved": 0, "rejected": 0, "modified": 0}
+        return {"approved": 0, "rejected": 0, "modified": 0, "decisions": []}
 
     index_path = PRISM_HOME / "index.json"
     constitution_path = PRISM_HOME / "constitution.md"
@@ -214,20 +329,63 @@ Exactly {n_candidates} elements — one per candidate, no omissions.
         return {"approved": 0, "rejected": 0, "modified": 0}
 
     # Parse validation results from output
-    return _parse_validation_output(result.stdout, project_id)
+    return _parse_validation_output(result.stdout, project_id, snapshot, n_candidates)
 
 
-def _parse_validation_output(output: str, project_id: str) -> dict:
+def _infer_results_from_snapshot(project_id: str, snapshot: dict, n_candidates: int) -> dict:
+    """Heuristic counts from before/after filenames when JSON parsing fails."""
+    engrams_dir = get_engrams_dir(project_id)
+    candidates_dir = get_candidates_dir(project_id)
+    engrams_after = {p.name for p in engrams_dir.glob("*.md")}
+    candidates_after = {p.name for p in candidates_dir.glob("*.md")}
+    new_engrams = engrams_after - snapshot["engrams_before"]
+    removed_candidates = snapshot["candidates_before"] - candidates_after
+    new_stems = {Path(name).stem for name in new_engrams}
+
+    approved = len(new_engrams)
+    rejected = sum(
+        1 for name in removed_candidates if Path(name).stem not in new_stems
+    )
+
+    return {
+        "approved": approved,
+        "rejected": rejected,
+        "modified": 0,
+        "decisions": [],
+        "parse_failed": True,
+        "new_engram_names": new_engrams,
+        "candidates_remaining": candidates_after,
+        "n_candidates": n_candidates,
+    }
+
+
+def _should_rotate_observations(results: dict, n_candidates: int, project_id: str) -> bool:
+    """Whether to mark observations extracted after phase 2."""
+    if results.get("parse_failed"):
+        if results.get("candidates_remaining"):
+            return False
+        new_engrams = results.get("new_engram_names") or set()
+        return len(new_engrams) <= n_candidates
+    decided = (
+        results.get("approved", 0)
+        + results.get("rejected", 0)
+        + results.get("modified", 0)
+    )
+    return decided > 0
+
+
+def _parse_validation_output(
+    output: str, project_id: str, snapshot: dict, n_candidates: int,
+) -> dict:
     """Parse Sonnet's validation output and extract decisions.
 
     Handles three Sonnet output shapes:
     1. Multiple ```json blocks (one decision dict per block) — collect all.
     2. Single ```json block wrapping a JSON array of N decisions.
     3. Single ```json block wrapping a single dict (wrap into 1-element list).
-    Falls back to parsing the whole body, then to counting engram files
-    if nothing parses at all.
+    On total parse failure, infers counts from snapshot diff (not total engrams/).
     """
-    results = {"approved": 0, "rejected": 0, "modified": 0, "decisions": []}
+    results = {"approved": 0, "rejected": 0, "modified": 0, "decisions": [], "parse_failed": False}
 
     decisions: list = []
     parsed_any = False
@@ -286,18 +444,16 @@ def _parse_validation_output(output: str, project_id: str) -> dict:
                 results["decisions"].append(d)
 
     except (json.JSONDecodeError, KeyError) as exc:
-        # Total parse failure — count any files Sonnet moved to entries dir
-        # and log a structured error so prism status can surface it.
-        engrams_dir = get_engrams_dir(project_id)
-        results["approved"] = len(list(engrams_dir.glob("*.md")))
+        results = _infer_results_from_snapshot(project_id, snapshot, n_candidates)
         _log_extract_error(
             stage="validation_parse",
             reason=str(exc),
             raw_output=output,
         )
 
-    # Log validation results
-    _log_validation(results["decisions"])
+    # Log validation results (skipped when parse_failed — no structured decisions)
+    if not results.get("parse_failed"):
+        _log_validation(results["decisions"])
 
     return results
 
@@ -318,27 +474,85 @@ def _log_extract_error(stage: str, reason: str, raw_output: str = "") -> None:
         pass
 
 
-def _apply_validation_results(project_id: str, results: dict, rotate: bool = True) -> None:
+def _resolve_engram_file_path(entry_id: str, project_id: str) -> Path | None:
+    """Resolve an engram markdown path from the index or conventional locations."""
+    if not entry_id:
+        return None
+    home = PRISM_HOME.resolve()
+    entry = get_entry(entry_id)
+    if entry and entry.get("path"):
+        path = (PRISM_HOME / entry["path"]).resolve()
+        if str(path).startswith(str(home)) and path.is_file():
+            return path
+    for base in (get_engrams_dir(project_id), PRISM_HOME / "global" / "engrams"):
+        candidate = base / f"{entry_id}.md"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _deprecate_entry(entry_id: str, project_id: str) -> bool:
+    """Delete a superseded engram file, then remove it from the index."""
+    path = _resolve_engram_file_path(entry_id, project_id)
+    if path:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    removed = remove_entry(entry_id)
+    return path is not None or removed is not None
+
+
+def _collect_deprecated_ids(results: dict) -> list[str]:
+    """Unique deprecated entry IDs from validation decisions."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for decision in results.get("decisions", []):
+        for entry_id in decision.get("deprecates") or []:
+            if entry_id and entry_id not in seen:
+                seen.add(entry_id)
+                ordered.append(entry_id)
+    return ordered
+
+
+def _apply_validation_results(
+    project_id: str,
+    results: dict,
+    rotate: bool = True,
+    observation_ids: list[int] | None = None,
+) -> None:
     """Update the index based on validation results."""
     engrams_dir = get_engrams_dir(project_id)
 
-    # Scan entries directory for any new files and add to index
+    # Deprecate before disk scan so orphaned files are not re-indexed
+    for entry_id in _collect_deprecated_ids(results):
+        _deprecate_entry(entry_id, project_id)
+
+    # Scan engrams on disk; merge with index so reinforce/maintain metrics are not lost
+    from .frontmatter import sync_entry_to_file
+
     for entry_file in engrams_dir.glob("*.md"):
-        entry = _parse_frontmatter(entry_file, project_id)
-        if entry:
-            add_entry(entry)
+        file_entry = _parse_frontmatter(entry_file, project_id)
+        if not file_entry:
+            continue
+        existing = get_entry(file_entry["id"])
+        if existing:
+            merged = merge_file_entry_with_index(file_entry, existing)
+            add_entry(merged)
+            sync_entry_to_file(merged)
+        else:
+            add_entry(file_entry)
 
-    # Handle deprecations
-    for decision in results.get("decisions", []):
-        for deprecated_id in decision.get("deprecates", []):
-            remove_entry(deprecated_id)
-
-    # Clean up any candidates Sonnet left behind (not moved or deleted).
-    # These are orphans — the validator didn't mention them in its JSON output.
-    # Treat as implicitly rejected so they don't accumulate across runs.
+    # Clean up candidates Sonnet left behind.
     candidates_dir = get_candidates_dir(project_id)
     orphans = list(candidates_dir.glob("*.md"))
-    if orphans:
+    if orphans and results.get("parse_failed"):
+        # JSON unknown — only remove files already promoted to engrams/
+        new_stems = {Path(n).stem for n in results.get("new_engram_names", set())}
+        for orphan in orphans:
+            if orphan.stem in new_stems:
+                orphan.unlink(missing_ok=True)
+    elif orphans:
         decided_ids = {d.get("candidate_id") for d in results.get("decisions", [])}
         for orphan in orphans:
             if orphan.stem not in decided_ids:
@@ -346,14 +560,17 @@ def _apply_validation_results(project_id: str, results: dict, rotate: bool = Tru
                 orphan.unlink(missing_ok=True)
         remaining = list(candidates_dir.glob("*.md"))
         if remaining:
-            # Sonnet moved approved/modified ones but forgot to delete rejected — clean up
             for leftover in remaining:
                 results["rejected"] = results.get("rejected", 0) + 1
                 leftover.unlink(missing_ok=True)
 
     # Only rotate observations if phase 2 completed successfully
-    if rotate:
-        _rotate_observations(project_id)
+    if rotate and observation_ids:
+        _rotate_observations(project_id, observation_ids)
+    elif rotate and observation_ids is None:
+        loaded = _load_batch_ids(project_id)
+        if loaded:
+            _rotate_observations(project_id, loaded)
 
 
 def _parse_frontmatter(filepath: Path, project_id: str) -> "dict | None":
@@ -414,21 +631,15 @@ def _parse_frontmatter(filepath: Path, project_id: str) -> "dict | None":
     )
 
 
-def _rotate_observations(project_id: str) -> None:
-    """Archive processed observations."""
-    obs_path = get_observations_path(project_id)
-    if not obs_path.exists():
-        return
-
-    archive_dir = get_project_dir(project_id) / "observations.archive"
-    archive_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    archive_path = archive_dir / f"observations_{timestamp}.jsonl"
-
-    obs_path.rename(archive_path)
-    # Create fresh empty file
-    obs_path.touch()
+def _rotate_observations(project_id: str, observation_ids: list[int]) -> None:
+    """Mark the extraction batch as extracted and purge old rows."""
+    config = get_config()
+    retain_seconds = config.get("observation_retention_seconds", 30 * 24 * 60 * 60)
+    mark_extracted(project_id, observation_ids=observation_ids)
+    _clear_batch_ids(project_id)
+    purged = purge_old(project_id, retain_seconds=retain_seconds)
+    if purged:
+        print(f"Purged {purged} old observations (retention: {retain_seconds}s).")
 
 
 def _log_validation(decisions: list) -> None:

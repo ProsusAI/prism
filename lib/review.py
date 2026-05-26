@@ -1,24 +1,19 @@
 """Background session review - extracts conversational insights that hooks miss.
 
-Reads the live session transcript and produces enriched observations
-(event: "session_insight") that feed into the normal extraction pipeline.
+Reads recent observations from SQLite (session_id scoped), expands compressed
+summaries, and produces enriched observations (event: "session_insight") that
+feed into the normal extraction pipeline.
 """
 
 import json
-import os
 import subprocess
 import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import PRISM_HOME, get_config, get_observations_path, ensure_dirs
+from .config import PRISM_HOME, get_config, ensure_dirs
+from .expand import expand
 from .index import load_index
-from .scrub import scrub_text
-
-CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
-REVIEW_LOCK = PRISM_HOME / ".reviewing"
-STALE_LOCK_SECONDS = 120
+from .observation_summary import prepare_input_summary
 
 
 def run_review(session_id: str, project_id: str) -> dict:
@@ -30,238 +25,66 @@ def run_review(session_id: str, project_id: str) -> dict:
     config = get_config()
     timeout = config.get("review_timeout", 60)
 
-    # Acquire lock
-    try:
-        if REVIEW_LOCK.exists():
-            age = time.time() - REVIEW_LOCK.stat().st_mtime
-            if age <= STALE_LOCK_SECONDS:
-                return {"insights": 0, "session_id": session_id, "status": "locked"}
-            REVIEW_LOCK.unlink(missing_ok=True)
+    from .storage import get_session_observations
+    rows = get_session_observations(session_id, limit=50)
+    if not rows:
+        return {"insights": 0, "session_id": session_id, "status": "no_context"}
 
-        fd = os.open(str(REVIEW_LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.close(fd)
-    except FileExistsError:
-        return {"insights": 0, "session_id": session_id, "status": "locked"}
+    obs_context = _build_obs_context(rows)
+    triggers = _load_existing_triggers()
+    prompt = _build_prompt(obs_context, triggers)
+    if not prompt:
+        return {"insights": 0, "session_id": session_id, "status": "no_context"}
 
-    try:
-        # Find session transcript
-        transcript_path = _find_session_transcript(session_id)
-        conversation = ""
-        if transcript_path:
-            conversation = _extract_conversation(transcript_path, max_lines=50)
-
-        # Read recent observations
-        observations = _read_recent_observations(project_id, max_lines=20)
-
-        # Read existing existing triggers for dedup
-        triggers = _load_existing_triggers()
-
-        # Assemble prompt
-        prompt = _build_prompt(conversation, observations, triggers)
-        if not prompt:
-            return {"insights": 0, "session_id": session_id, "status": "no_context"}
-
-        # Find reviewer agent prompt
-        reviewer_prompt = _find_reviewer_prompt()
-        if reviewer_prompt:
-            prompt = reviewer_prompt + "\n\n---\n\n" + prompt
-
-        # Run Haiku (no tools needed -- context is baked in)
-        try:
-            result = subprocess.run(
-                ["claude", "--print", "--model", "haiku", "-p", prompt],
-                capture_output=True, text=True, timeout=timeout,
-            )
-            if result.returncode != 0:
-                return {"insights": 0, "session_id": session_id, "status": "haiku_error"}
-        except FileNotFoundError:
-            return {"insights": 0, "session_id": session_id, "status": "cli_not_found"}
-        except subprocess.TimeoutExpired:
-            return {"insights": 0, "session_id": session_id, "status": "timeout"}
-
-        # Parse and write observations
-        insights = _parse_review_output(result.stdout)
-        if insights:
-            _write_observations(insights, session_id, project_id)
-
-        return {"insights": len(insights), "session_id": session_id, "status": "ok"}
-
-    finally:
-        REVIEW_LOCK.unlink(missing_ok=True)
-
-
-def _find_session_transcript(session_id: str) -> "Path | None":
-    """Find the live session JSONL file."""
-    if not CLAUDE_PROJECTS_DIR.exists():
-        return None
-
-    # Primary: derive folder from cwd
-    cwd = os.getcwd()
-    folder_name = cwd.replace("/", "-")
-    candidate = CLAUDE_PROJECTS_DIR / folder_name / f"{session_id}.jsonl"
-    if candidate.exists():
-        return candidate
-
-    # Fallback: glob for session ID across all project folders
-    matches = list(CLAUDE_PROJECTS_DIR.glob(f"*/{session_id}.jsonl"))
-    if matches:
-        return matches[0]
-
-    return None
-
-
-def _extract_conversation(transcript_path: Path, max_lines: int = 50) -> str:
-    """Extract filtered conversation text from session JSONL.
-
-    Two passes:
-    1. Scan the FULL transcript for correction-like user messages (preferences,
-       corrections, pushback) -- these are high-signal and shouldn't be lost to windowing.
-    2. Take the last N lines for recent conversational context.
-
-    Skips tool_result content (the bulk of the file), attachments, thinking blocks.
-    """
-    try:
-        with open(transcript_path) as f:
-            all_lines = f.readlines()
-    except OSError:
-        return ""
-
-    # --- Pass 1: Collect ALL user messages from full transcript ---
-    # Don't filter with heuristics -- let Haiku decide what's a preference.
-    # Just skip very short messages, IDE tags, and tool results.
-    user_messages = []
-    for line in all_lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("type") != "user":
-            continue
-        content = msg.get("message", {}).get("content", [])
-        texts = []
-        if isinstance(content, str):
-            texts.append(content)
-        elif isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    texts.append(block.get("text", ""))
-        for text in texts:
-            if not text or len(text) < 10 or len(text) > 500:
-                continue
-            lower = text.strip().lower()
-            # Skip IDE-injected tags, JSON blobs, system messages
-            if lower.startswith("<") or lower.startswith("{"):
-                continue
-            scrubbed = scrub_text(text)[:300]
-            if scrubbed not in user_messages:
-                user_messages.append(scrubbed)
-
-    # --- Pass 2: Recent conversation window ---
-    recent = all_lines[-max_lines:]
-    parts = []
-    for line in recent:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue  # Skip partial writes
-
-        msg_type = msg.get("type")
-        content = msg.get("message", {}).get("content", [])
-
-        if msg_type == "user":
-            if isinstance(content, str):
-                text = scrub_text(content)
-                if text and len(text) > 4:
-                    parts.append(f"USER: {text[:500]}")
-            elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text = scrub_text(block.get("text", ""))
-                        if text and len(text) > 4 and not text.strip().startswith("<"):
-                            parts.append(f"USER: {text[:500]}")
-
-        elif msg_type == "assistant":
-            if isinstance(content, list):
-                for block in content:
-                    if not isinstance(block, dict):
-                        continue
-                    block_type = block.get("type")
-
-                    if block_type == "text":
-                        text = scrub_text(block.get("text", ""))
-                        if text:
-                            parts.append(f"ASSISTANT: {text[:500]}")
-
-                    elif block_type == "tool_use":
-                        tool_name = block.get("name", "unknown")
-                        tool_input = block.get("input", {})
-                        summary = ""
-                        if isinstance(tool_input, dict):
-                            # Just key info, not full content
-                            summary = json.dumps(tool_input, ensure_ascii=False)[:100]
-                        parts.append(f"ASSISTANT [tool: {tool_name}]: {summary}")
-
-    # Prepend all user messages from the session so Haiku can identify preferences
-    result = ""
-    if user_messages:
-        result += "## All User Messages (from full session -- identify preferences, corrections, expectations)\n\n"
-        for m in user_messages[:30]:  # Cap to keep prompt reasonable
-            result += f"- {m}\n"
-        result += "\n## Recent Conversation\n\n"
-    result += "\n".join(parts)
-    return result
-
-
-def _read_recent_observations(project_id: str, max_lines: int = 20) -> str:
-    """Read the last N lines from observations.jsonl."""
-    obs_path = get_observations_path(project_id)
-    if not obs_path.exists():
-        return ""
+    reviewer_prompt = _find_reviewer_prompt()
+    if reviewer_prompt:
+        prompt = reviewer_prompt + "\n\n---\n\n" + prompt
 
     try:
-        with open(obs_path) as f:
-            all_lines = f.readlines()
-    except OSError:
-        return ""
+        result = subprocess.run(
+            ["claude", "--print", "--model", "haiku", "-p", prompt],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            return {"insights": 0, "session_id": session_id, "status": "haiku_error"}
+    except FileNotFoundError:
+        return {"insights": 0, "session_id": session_id, "status": "cli_not_found"}
+    except subprocess.TimeoutExpired:
+        return {"insights": 0, "session_id": session_id, "status": "timeout"}
 
-    recent = all_lines[-max_lines:]
-    summaries = []
-    for line in recent:
-        try:
-            obs = json.loads(line.strip())
-            event = obs.get("event", "")
-            tool = obs.get("tool", "")
-            summary = obs.get("input_summary", "")[:200]
-            summaries.append(f"  {event}: {tool} -- {summary}")
-        except json.JSONDecodeError:
-            continue
+    insights = _parse_review_output(result.stdout)
+    if insights:
+        _write_insights(insights, session_id, project_id)
 
-    return "\n".join(summaries)
+    return {"insights": len(insights), "session_id": session_id, "status": "ok"}
+
+
+def _build_obs_context(rows: list[dict]) -> str:
+    """Format observation rows as reviewer context, expanding compressed summaries."""
+    lines = []
+    for row in rows:
+        summary = expand(row.get("input_summary", ""))
+        event = row.get("event", "")
+        tool = row.get("tool", "")
+        lines.append(f"  {event}: {tool} -- {summary[:300]}")
+    return "\n".join(lines)
 
 
 def _load_existing_triggers() -> str:
-    """Load existing existing triggers for dedup context."""
+    """Load existing triggers for dedup context."""
     index = load_index()
     entries_list = index.get("engrams", [])
     if not entries_list:
         return "(none)"
 
     lines = []
-    for e in entries_list[:30]:  # Cap to keep prompt small
-        trigger = e.get("trigger", "")
-        lines.append(f"  - {e['id']}: {trigger}")
+    for e in entries_list[:30]:
+        lines.append(f"  - {e['id']}: {e.get('trigger', '')}")
     return "\n".join(lines)
 
 
 def _find_reviewer_prompt() -> "str | None":
     """Find and read the reviewer agent prompt."""
-    # Installed location
     installed = PRISM_HOME / "agents" / "reviewer.md"
     if installed.exists():
         try:
@@ -269,7 +92,6 @@ def _find_reviewer_prompt() -> "str | None":
         except OSError:
             pass
 
-    # Repo-relative (development)
     repo = Path(__file__).parent.parent / "agents" / "reviewer.md"
     if repo.exists():
         try:
@@ -280,37 +102,23 @@ def _find_reviewer_prompt() -> "str | None":
     return None
 
 
-def _build_prompt(conversation: str, observations: str, triggers: str) -> str:
-    """Assemble the full review prompt with context."""
-    if not conversation and not observations:
+def _build_prompt(obs_context: str, triggers: str) -> str:
+    """Assemble the review prompt from session observations and existing triggers."""
+    if not obs_context:
         return ""
 
-    sections = []
-
-    if conversation:
-        sections.append(f"## Recent Conversation\n\n{conversation}")
-
-    if observations:
-        sections.append(f"## Recent Tool Events (already captured by hooks)\n\n{observations}")
-
-    sections.append(f"## Existing Knowledge Triggers (do not duplicate)\n\n{triggers}")
-
-    return "\n\n---\n\n".join(sections)
+    return "\n\n---\n\n".join([
+        f"## Recent Session Observations\n\n{obs_context}",
+        f"## Existing Knowledge Triggers (do not duplicate)\n\n{triggers}",
+    ])
 
 
 def _parse_review_output(output: str) -> list:
-    """Parse Haiku's review output into observation dicts."""
+    """Parse Haiku's review output into insight dicts."""
     import re
 
-    # Try ```json fenced block first
     json_match = re.search(r"```json\s*\n(.*?)\n\s*```", output, re.DOTALL)
-    raw = None
-    if json_match:
-        raw = json_match.group(1)
-    else:
-        # Try parsing whole output
-        raw = output.strip()
-
+    raw = json_match.group(1) if json_match else output.strip()
     if not raw:
         return []
 
@@ -334,26 +142,26 @@ def _parse_review_output(output: str) -> list:
             "summary": summary,
             "evidence": item.get("evidence", ""),
         })
-
     return valid
 
 
-def _write_observations(insights: list, session_id: str, project_id: str) -> None:
-    """Append enriched observations to observations.jsonl."""
-    obs_path = get_observations_path(project_id)
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    with open(obs_path, "a") as f:
-        for insight in insights:
-            obs = {
-                "timestamp": timestamp,
-                "event": "session_insight",
-                "tool": "reviewer",
-                "input_summary": scrub_text(insight["summary"]),
-                "insight_type": insight["insight_type"],
-                "evidence": scrub_text(insight.get("evidence", ""))[:300],
-                "session": session_id,
-                "project_id": project_id,
-                "source": "session_review",
-            }
-            f.write(json.dumps(obs, ensure_ascii=False) + "\n")
+def _write_insights(insights: list, session_id: str, project_id: str) -> None:
+    """Insert review insights as observations into SQLite."""
+    from .storage import insert_observation, init_db, DB_PATH
+    if not DB_PATH.exists():
+        init_db(DB_PATH)
+    for insight in insights:
+        summary = prepare_input_summary(insight["summary"])
+        if summary is None:
+            continue
+        evidence_prepared = prepare_input_summary(insight.get("evidence", ""))
+        insert_observation(
+            session_id=session_id,
+            project_id=project_id,
+            event="session_insight",
+            tool="reviewer",
+            source="session_review",
+            input_summary=summary,
+            insight_type=insight.get("insight_type"),
+            evidence=(evidence_prepared or "")[:300],
+        )

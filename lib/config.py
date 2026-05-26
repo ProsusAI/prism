@@ -40,7 +40,8 @@ DEFAULT_CONFIG = {
         r"(?i)ignore\s+previous",
         r"(?i)disregard\s+rules",
     ],
-    "review_interval": 5,           # observations between session reviews (0 = disable)
+    "review_interval": 5,           # capture observations between session reviews (0 = disable)
+    "review_cooldown_seconds": 1800,  # min seconds between auto-reviews per session
     "review_timeout": 60,           # seconds before review subprocess is killed
     "registry_url": "",             # git URL for team registry
     "cache_max_age_hours": 24,      # max age before registry cache is considered stale
@@ -85,11 +86,6 @@ def get_engrams_dir(project_id: str) -> Path:
 def get_candidates_dir(project_id: str) -> Path:
     """Get the candidates staging directory for a project."""
     return get_project_dir(project_id) / "candidates"
-
-
-def get_observations_path(project_id: str) -> Path:
-    """Get the observations JSONL file path for a project."""
-    return get_project_dir(project_id) / "observations.jsonl"
 
 
 def ensure_dirs(project_id: str) -> None:

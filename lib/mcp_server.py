@@ -22,6 +22,7 @@ from lib.index import (
     get_entry,
     load_index,
     list_entries,
+    reinforce_entries,
     save_index,
 )
 
@@ -122,8 +123,6 @@ def _relevant(file_path=None, domain=None, project_id=None, limit=5):
         domain = ext_domain.get(ext)
 
     filters = {}
-    if domain:
-        filters["kind"] = None  # all kinds
     if project_id:
         filters["project_id"] = project_id
 
@@ -138,10 +137,10 @@ def _relevant(file_path=None, domain=None, project_id=None, limit=5):
     return entries[:limit]
 
 
-VALID_KINDS = {"preference", "correction", "procedure", "error_recipe", "domain_fact", "tool_pattern"}
+VALID_KINDS = {"preference", "correction", "procedure", "error_recipe", "domain_fact", "solution"}
 
 
-def _record(text, kind="preference", project_id=None, scope="global"):
+def _record(text, kind="preference", project_id=None, scope="project"):
     """Record a new entry mid-session (like 'prism learn')."""
     if kind not in VALID_KINDS:
         return {"id": "", "status": "error", "message": f"Invalid kind: {kind}"}
@@ -212,29 +211,10 @@ Recorded via MCP during coding session.
     return {"id": entry_id, "status": "created", "confidence": 0.9}
 
 
-def _reinforce_batch(entry_ids: list, boost: float = 0.02) -> None:
-    """Batch-update last_observed and confidence for returned entries (D-05).
-
-    Uses a single index load/save cycle to avoid N saves per search.
-    boost: confidence increase per reinforcement (0.02 for MCP query, smaller than
-    observation match at 0.05 -- Claude's discretion per CONTEXT.md).
-    """
-    if not entry_ids:
-        return
+def _reinforce_batch(entry_ids: list) -> None:
+    """Boost confidence and refresh last_observed for returned entries (D-05)."""
     try:
-        index = load_index()
-        today = __import__("datetime").date.today().isoformat()
-        changed = False
-        for e in index.get("engrams", []):
-            if e["id"] in entry_ids:
-                e["last_observed"] = today
-                old_conf = e.get("confidence", 0.5)
-                # Cap at 0.95 -- only explicit user learn gets 0.9 starting, and
-                # reinforcement shouldn't push past that ceiling
-                e["confidence"] = round(min(0.95, old_conf + boost), 3)
-                changed = True
-        if changed:
-            save_index(index)
+        reinforce_entries(entry_ids)
     except Exception:
         pass  # Never let reinforcement break MCP responses
 
@@ -287,7 +267,7 @@ TOOLS = [
                 "kind": {
                     "type": "string",
                     "description": "Type of knowledge",
-                    "enum": ["preference", "correction", "procedure", "error_recipe", "domain_fact", "tool_pattern"],
+                    "enum": ["preference", "correction", "procedure", "error_recipe", "domain_fact", "solution"],
                     "default": "preference",
                 },
             },
@@ -321,6 +301,7 @@ def _handle_tool_call(name, arguments):
         result = _get_entry_content(arguments["id"])
         if not result:
             return {"content": [{"type": "text", "text": f"Entry '{arguments['id']}' not found."}], "isError": True}
+        _reinforce_batch([arguments["id"]])
         return {"content": [{"type": "text", "text": result["content"]}]}
 
     elif name == "prism_relevant":

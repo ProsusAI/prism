@@ -23,6 +23,31 @@ BASELINE_SCRUB_PATTERNS = [
 ]
 
 
+def is_blocked_text(text: str, extra_patterns: "List[str] | None" = None) -> bool:
+    """True if text matches adversarial / override patterns from config."""
+    if not text:
+        return False
+    patterns: list[str] = []
+    try:
+        from .config import get_config
+        for p in get_config().get("block_patterns", []):
+            if p not in patterns:
+                patterns.append(p)
+    except (ImportError, Exception):
+        pass
+    if extra_patterns:
+        for p in extra_patterns:
+            if p not in patterns:
+                patterns.append(p)
+    for pattern in patterns:
+        try:
+            if re.search(pattern, text):
+                return True
+        except re.error:
+            continue
+    return False
+
+
 def scrub_text(text: str, extra_patterns: "List[str] | None" = None) -> str:
     """Remove secrets from text using baseline + config + extra patterns.
 

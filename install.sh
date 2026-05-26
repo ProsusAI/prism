@@ -101,6 +101,7 @@ if [ ! -f "$PRISM_HOME/config.json" ]; then
 {
   "extract_threshold": 15,
   "review_interval": 5,
+  "review_cooldown_seconds": 1800,
   "review_timeout": 60,
   "decay_rate_per_week": 0.02,
   "archive_threshold": 0.2,

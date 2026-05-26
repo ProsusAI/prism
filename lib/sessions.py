@@ -7,8 +7,17 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import PRISM_HOME, ensure_dirs, get_observations_path
-from .scrub import sanitize_payload
+from .config import PRISM_HOME, ensure_dirs
+from .storage import insert_observations_batch, init_db, DB_PATH, delete_by_session_ids
+from .observation_summary import prepare_input_summary
+
+
+def _append_observation(observations: list, *, raw_summary: str, **fields) -> None:
+    """Append an observation unless block_patterns reject the summary text."""
+    summary = prepare_input_summary(raw_summary)
+    if summary is None:
+        return
+    observations.append({**fields, "input_summary": summary})
 
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
@@ -339,19 +348,20 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
 
                         input_summary = ""
                         if isinstance(tool_input, dict):
-                            input_summary = json.dumps(tool_input, ensure_ascii=False)[:500]
+                            input_summary = json.dumps(tool_input, ensure_ascii=False)
                         elif isinstance(tool_input, str):
-                            input_summary = tool_input[:500]
+                            input_summary = tool_input
 
-                        observations.append({
-                            "timestamp": timestamp,
-                            "event": "tool_start",
-                            "tool": tool_name,
-                            "input_summary": sanitize_payload(input_summary),
-                            "session": sid,
-                            "project_id": project_id,
-                            "source": "session_import",
-                        })
+                        _append_observation(
+                            observations,
+                            raw_summary=input_summary,
+                            timestamp=timestamp,
+                            event="tool_start",
+                            tool=tool_name,
+                            session=sid,
+                            project_id=project_id,
+                            source="session_import",
+                        )
 
             elif msg_type == "user":
                 content = msg.get("message", {}).get("content", [])
@@ -363,27 +373,29 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
                 tool_result = msg.get("toolUseResult")
                 if isinstance(tool_result, str) and tool_result:
                     is_err = "error" in tool_result.lower()
-                    observations.append({
-                        "timestamp": timestamp,
-                        "event": "tool_rejected" if is_err else "tool_end",
-                        "tool": "unknown",
-                        "input_summary": sanitize_payload(tool_result[:300]),
-                        "session": sid,
-                        "project_id": project_id,
-                        "source": "session_import",
-                    })
+                    _append_observation(
+                        observations,
+                        raw_summary=tool_result,
+                        timestamp=timestamp,
+                        event="tool_rejected" if is_err else "tool_end",
+                        tool="unknown",
+                        session=sid,
+                        project_id=project_id,
+                        source="session_import",
+                    )
                 elif isinstance(tool_result, dict) and tool_result.get("prompt"):
                     status = tool_result.get("status", "")
                     event = "tool_rejected" if status == "error" else "tool_end"
-                    observations.append({
-                        "timestamp": timestamp,
-                        "event": event,
-                        "tool": "Agent",
-                        "input_summary": sanitize_payload(str(tool_result["prompt"])[:300]),
-                        "session": sid,
-                        "project_id": project_id,
-                        "source": "session_import",
-                    })
+                    _append_observation(
+                        observations,
+                        raw_summary=str(tool_result["prompt"]),
+                        timestamp=timestamp,
+                        event=event,
+                        tool="Agent",
+                        session=sid,
+                        project_id=project_id,
+                        source="session_import",
+                    )
 
                 if isinstance(content, list):
                     for block in content:
@@ -403,39 +415,42 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
                                          if isinstance(b, dict) and b.get("type") == "text"]
                                 result_content = " ".join(texts)
 
-                            observations.append({
-                                "timestamp": timestamp,
-                                "event": event,
-                                "tool": tool_name,
-                                "input_summary": sanitize_payload(str(result_content)[:300]),
-                                "session": sid,
-                                "project_id": project_id,
-                                "source": "session_import",
-                            })
+                            _append_observation(
+                                observations,
+                                raw_summary=str(result_content),
+                                timestamp=timestamp,
+                                event=event,
+                                tool=tool_name,
+                                session=sid,
+                                project_id=project_id,
+                                source="session_import",
+                            )
 
                         elif block.get("type") == "text":
                             text = block.get("text", "")
                             if is_correction_like(text):
-                                observations.append({
-                                    "timestamp": timestamp,
-                                    "event": "user_guidance",
-                                    "tool": "user",
-                                    "input_summary": sanitize_payload(text),
-                                    "session": sid,
-                                    "project_id": project_id,
-                                    "source": "session_import",
-                                })
+                                _append_observation(
+                                    observations,
+                                    raw_summary=text,
+                                    timestamp=timestamp,
+                                    event="user_guidance",
+                                    tool="user",
+                                    session=sid,
+                                    project_id=project_id,
+                                    source="session_import",
+                                )
 
                 elif isinstance(content, str) and is_correction_like(content):
-                    observations.append({
-                        "timestamp": timestamp,
-                        "event": "user_guidance",
-                        "tool": "user",
-                        "input_summary": sanitize_payload(content),
-                        "session": sid,
-                        "project_id": project_id,
-                        "source": "session_import",
-                    })
+                    _append_observation(
+                        observations,
+                        raw_summary=content,
+                        timestamp=timestamp,
+                        event="user_guidance",
+                        tool="user",
+                        session=sid,
+                        project_id=project_id,
+                        source="session_import",
+                    )
 
     stats = {
         "session_id": session_id,
@@ -447,10 +462,9 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
 
     if not dry_run and observations:
         ensure_dirs(project_id)
-        obs_path = get_observations_path(project_id)
-        with open(obs_path, "a") as f:
-            for obs in observations:
-                f.write(json.dumps(obs, ensure_ascii=False) + "\n")
+        if not DB_PATH.exists():
+            init_db(DB_PATH)
+        insert_observations_batch(observations)
 
     return stats
 
@@ -492,27 +506,11 @@ def analyze_all_sessions(
         last_n=last_n,
     )
 
-    # --force: strip existing observations for sessions about to be re-processed
-    # so re-runs don't stack duplicates. Keyed by session ID — surgical, not blanket.
+    # --force: delete existing observations for sessions about to be re-processed
+    # so re-runs don't stack duplicates.
     if force and not dry_run:
-        force_ids = {s["session_id"] for s in sessions}
-        affected_pids = {s["project_id"] for s in sessions}
-        for pid in affected_pids:
-            obs_path = get_observations_path(pid)
-            if not obs_path.exists():
-                continue
-            try:
-                kept = []
-                for line in obs_path.read_text().splitlines(keepends=True):
-                    try:
-                        sid = json.loads(line).get("session", "")
-                    except (json.JSONDecodeError, ValueError):
-                        sid = ""
-                    if sid not in force_ids:
-                        kept.append(line)
-                obs_path.write_text("".join(kept))
-            except OSError:
-                pass
+        force_ids = list({s["session_id"] for s in sessions})
+        delete_by_session_ids(force_ids)
 
     processed = 0
     skipped = 0

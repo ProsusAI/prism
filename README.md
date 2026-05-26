@@ -143,6 +143,8 @@ Prism has two channels for getting knowledge into Claude Code or Cursor:
 
 Engrams have a lifecycle: they start at a base confidence, strengthen when the same pattern is observed again, and decay slowly without reinforcement. Run `prism maintain` periodically to keep things fresh.
 
+**Observation compression** — before any observation reaches the database, it goes through a compression pass that strips fillers, hedges, pleasantries, and articles from prose while leaving code blocks, file paths, URLs, commands, identifiers, version numbers, and dates completely unchanged. This reduces storage noise and keeps the context fed into the extraction pipeline tighter. All observations are stored at `intensity='lite'` by default. The compression logic is a modified version of [Cavemem](https://github.com/JuliusBrussee/cavemem)'s approach.
+
 ## Configuration
 
 ```bash
@@ -157,8 +159,9 @@ Key settings: `extract_threshold` (observations before auto-extraction), `decay_
 ```
 ~/.prism/
   config.json          # Settings
+  prism.db             # SQLite database — all observations + FTS5 index (shared across projects)
   global/engrams/      # Cross-project knowledge
-  projects/<hash>/     # Per-project observations + knowledge
+  projects/<hash>/     # Per-project engrams
   lib/                 # Python library
   hooks/               # Claude Code hooks
   agents/              # AI agent prompts (extractor, validator, reviewer)

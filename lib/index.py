@@ -27,6 +27,48 @@ def load_index() -> dict:
         return {"engrams": []}
 
 
+def _write_index_file(index: dict, path: Path, tmp_path: Path, bak_path: Path) -> None:
+    """Write index to disk. Caller must hold the lock."""
+    with open(tmp_path, "w") as f:
+        json.dump(index, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    if path.exists():
+        shutil.copy2(str(path), str(bak_path))
+    os.rename(str(tmp_path), str(path))
+
+
+def _update_index(fn) -> None:
+    """Acquire lock, load index, apply fn(index), write back atomically.
+
+    fn receives the mutable index dict. Any mutations are persisted.
+    Use a closure to capture return values from fn.
+    """
+    path = _index_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".tmp")
+    bak_path = path.with_suffix(".bak")
+    lock_path = path.with_suffix(".lock")
+
+    lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        if path.exists():
+            try:
+                with open(path) as f:
+                    index = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                index = {"engrams": []}
+        else:
+            index = {"engrams": []}
+        fn(index)
+        _write_index_file(index, path, tmp_path, bak_path)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
+
+
 def save_index(index: dict) -> None:
     """Save the master index atomically with file locking.
 
@@ -35,58 +77,80 @@ def save_index(index: dict) -> None:
     """
     path = _index_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-
     tmp_path = path.with_suffix(".tmp")
     bak_path = path.with_suffix(".bak")
     lock_path = path.with_suffix(".lock")
 
-    # Acquire file lock
     lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
-
-        # Write to temp file first
-        with open(tmp_path, "w") as f:
-            json.dump(index, f, indent=2)
-            f.write("\n")
-            f.flush()
-            os.fsync(f.fileno())
-
-        # Backup existing index
-        if path.exists():
-            shutil.copy2(str(path), str(bak_path))
-
-        # Atomic rename
-        os.rename(str(tmp_path), str(path))
-
+        _write_index_file(index, path, tmp_path, bak_path)
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         os.close(lock_fd)
 
 
 def add_entry(entry: dict) -> None:
-    """Add or update an knowledge entry in the index."""
-    index = load_index()
-    # Remove existing entry with same ID if present
-    index["engrams"] = [e for e in index["engrams"] if e["id"] != entry["id"]]
-    index["engrams"].append(entry)
-    save_index(index)
+    """Add or update a knowledge entry in the index."""
+    def _fn(index):
+        index["engrams"] = [e for e in index["engrams"] if e["id"] != entry["id"]]
+        index["engrams"].append(entry)
+    _update_index(_fn)
+
+
+def merge_file_entry_with_index(file_entry: dict, existing: dict) -> dict:
+    """Merge parsed engram file metadata with an existing index row.
+
+    Structural fields (kind, trigger, tags, path, ...) come from the file.
+    Reinforcement metrics use the higher confidence, higher evidence_count,
+    and later last_observed. Index-only keys (e.g. source, published) are kept.
+    """
+    merged = dict(file_entry)
+    merged["confidence"] = round(
+        max(float(existing.get("confidence", 0)), float(file_entry.get("confidence", 0))),
+        3,
+    )
+    merged["evidence_count"] = max(
+        int(existing.get("evidence_count", 0)),
+        int(file_entry.get("evidence_count", 0)),
+    )
+    merged["last_observed"] = max(
+        existing.get("last_observed") or "",
+        file_entry.get("last_observed") or "",
+    )
+    merged["success_count"] = max(
+        int(existing.get("success_count", 0)),
+        int(file_entry.get("success_count", 0)),
+    )
+    merged["failure_count"] = max(
+        int(existing.get("failure_count", 0)),
+        int(file_entry.get("failure_count", 0)),
+    )
+    if existing.get("pinned") or file_entry.get("pinned"):
+        merged["pinned"] = True
+    for key in ("source", "published"):
+        if key in existing:
+            merged[key] = existing[key]
+    return merged
 
 
 def remove_entry(entry_id: str) -> Optional[dict]:
     """Remove an entry from the index. Returns the removed entry or None."""
-    index = load_index()
-    removed = None
-    new_entries = []
-    for e in index["engrams"]:
-        if e["id"] == entry_id:
-            removed = e
-        else:
-            new_entries.append(e)
-    if removed:
-        index["engrams"] = new_entries
-        save_index(index)
-    return removed
+    result: list[Optional[dict]] = [None]
+
+    def _fn(index):
+        kept, removed = [], None
+        for e in index["engrams"]:
+            if e["id"] == entry_id:
+                removed = e
+            else:
+                kept.append(e)
+        if removed:
+            index["engrams"] = kept
+            result[0] = removed
+
+    _update_index(_fn)
+    return result[0]
 
 
 def get_entry(entry_id: str) -> Optional[dict]:
@@ -122,36 +186,44 @@ def list_entries(
 
 def update_confidence(entry_id: str, new_confidence: float) -> bool:
     """Update the confidence score of an entry in the index."""
-    index = load_index()
-    for e in index["engrams"]:
-        if e["id"] == entry_id:
-            e["confidence"] = round(new_confidence, 3)
-            save_index(index)
-            return True
-    return False
+    result = [False]
+
+    def _fn(index):
+        for e in index["engrams"]:
+            if e["id"] == entry_id:
+                e["confidence"] = round(new_confidence, 3)
+                result[0] = True
+                break
+
+    _update_index(_fn)
+    return result[0]
 
 
 def update_last_observed(entry_id: str, observed_date: Optional[str] = None) -> bool:
     """Update the last_observed date of an entry."""
-    index = load_index()
     obs_date = observed_date or date.today().isoformat()
-    for e in index["engrams"]:
-        if e["id"] == entry_id:
-            e["last_observed"] = obs_date
-            save_index(index)
-            return True
-    return False
+    result = [False]
+
+    def _fn(index):
+        for e in index["engrams"]:
+            if e["id"] == entry_id:
+                e["last_observed"] = obs_date
+                result[0] = True
+                break
+
+    _update_index(_fn)
+    return result[0]
 
 
 def reinforce_entries(entry_ids: list[str]) -> int:
     """Increment evidence_count, refresh last_observed, and boost confidence for a set of entries.
 
-    Loads the index once, updates all matching entries, saves once. Used by
+    Loads the index once under lock, updates all matching entries, saves once. Used by
     sync to credit engrams that were selected for the prism.md push layer --
     otherwise context-injected engrams decay even while actively in use.
 
-    Confidence is boosted by +0.02 (capped at 0.95), matching `_reinforce_batch`
-    in mcp_server.py so push-layer engrams stay at parity with MCP-queried ones.
+    Confidence is boosted by +0.02 (capped at 0.95), matching mcp_server.py so
+    push-layer engrams stay at parity with MCP-queried ones.
 
     Returns the number of entries actually updated.
     """
@@ -159,20 +231,25 @@ def reinforce_entries(entry_ids: list[str]) -> int:
         return 0
     id_set = set(entry_ids)
     today = date.today().isoformat()
-    index = load_index()
-    updated = 0
-    for e in index["engrams"]:
-        if e["id"] in id_set:
-            e["evidence_count"] = e.get("evidence_count", 0) + 1
-            e["last_observed"] = today
-            old_conf = e.get("confidence", 0.5)
-            # Cap at 0.95 -- mirrors _reinforce_batch in mcp_server.py so prism.md
-            # push layer accrues confidence at the same rate as MCP queries
-            e["confidence"] = round(min(0.95, old_conf + 0.02), 3)
-            updated += 1
-    if updated:
-        save_index(index)
-    return updated
+    result = [0]
+    synced: list[dict] = []
+
+    def _fn(index):
+        updated = 0
+        for e in index["engrams"]:
+            if e["id"] in id_set:
+                e["evidence_count"] = e.get("evidence_count", 0) + 1
+                e["last_observed"] = today
+                e["confidence"] = round(min(0.95, e.get("confidence", 0.5) + 0.02), 3)
+                synced.append(dict(e))
+                updated += 1
+        result[0] = updated
+
+    _update_index(_fn)
+    if synced:
+        from .frontmatter import sync_entries_to_files
+        sync_entries_to_files(synced)
+    return result[0]
 
 
 def build_index_entry(

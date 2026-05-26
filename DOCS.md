@@ -57,7 +57,7 @@ Claude Code Session
 - Zero runtime Python dependencies (stdlib only)
 - Hooks never block Claude Code (exit 0 always, background processing)
 - AI calls go through the `claude` CLI, not the Anthropic SDK
-- All data is files on disk (JSON, JSONL, Markdown) -- no database
+- Observations stored in SQLite (`prism.db`, WAL mode, FTS5); engrams, index, and config remain flat files (Markdown, JSON)
 
 ---
 
@@ -189,36 +189,47 @@ Claude Code tool call
   -> Hook fires (capture.sh)
     -> Reads JSON from stdin
     -> Pipes to python3 capture.py
-      -> Scrubs secrets
+      -> Scrubs secrets + adversarial block check
+      -> Compresses prose (preserves code/paths/URLs/identifiers)
       -> Truncates to safe length
-      -> Appends to observations.jsonl
+      -> Inserts into prism.db (SQLite, WAL mode)
       -> Checks extraction trigger threshold
 ```
 
 ### What gets captured
 
-Every PreToolUse event produces an observation:
+Every PreToolUse event is written as a row in `~/.prism/prism.db`. Key columns:
 
-```json
-{
-  "timestamp": "2026-04-14T12:00:00Z",
-  "event": "tool_start",
-  "tool": "Write",
-  "input_summary": "Write to src/config.ts: export const ...",
-  "session": "abc123",
-  "project_id": "f4a3b2c1d0e9",
-  "source": "claude_code"
-}
-```
+| Column | Example value |
+|--------|---------------|
+| `session_id` | `"abc123"` |
+| `project_id` | `"f4a3b2c1d0e9"` |
+| `event` | `"tool_start"` |
+| `tool` | `"Write"` |
+| `source` | `"claude_code"` |
+| `input_summary` | `"Write src/config.ts: export const ..."` (compressed) |
+| `compressed` | `1` |
+| `intensity` | `"lite"` |
+| `extracted_at` | `NULL` (set when extracted) |
+| `ts` | `1713096000` (Unix) |
 
-Observations are appended to `~/.prism/projects/<project_id>/observations.jsonl` using atomic `O_APPEND` writes.
+### Observation compression
+
+Before any observation is written, the input summary passes through a three-step pipeline implemented in `lib/observation_summary.py`:
+
+1. **Scrub** — secrets and adversarial prompt patterns are removed (`lib/scrub.py`)
+2. **Compress** — prose segments are compressed via a modified version of [Cavemem](https://github.com/JuliusBrussee/cavemem)'s approach (`lib/compress.py`): a tokenizer (`lib/text_tokenize.py`) splits the text into *preserved* segments (code fences, inline code, URLs, file paths, shell commands, identifiers, version numbers, dates, numbers, headings) and *prose* segments; only prose is touched — fillers, hedges, pleasantries, and articles are stripped and common words are abbreviated using a built-in lexicon (`lib/lexicon.json`). Default intensity is `lite`.
+3. **Truncate** — the result is capped at `MAX_PAYLOAD_LENGTH` bytes.
+
+Compression failures fall back to scrubbed-only text so the hook never crashes.
 
 ### Hook safety
 
 - `capture.sh` always exits 0, even on errors
 - Processing happens in the background (no user-perceived delay)
 - Stdin piped directly to a single Python process (avoids spawning multiple interpreters)
-- Secret scrubbing runs before any data is written to disk
+- Secret scrubbing and adversarial block check run before any data is written to disk
+- SQLite WAL mode allows concurrent readers without blocking the writer
 
 ---
 
@@ -237,7 +248,7 @@ Extraction runs when:
 The extractor agent (`agents/extractor.md`) reads recent observations and proposes candidate engrams:
 
 ```
-Observations (JSONL) -> claude --model haiku -> Candidate engrams (JSON)
+Observations (SQLite) -> claude --model haiku -> Candidate engrams (JSON)
 ```
 
 Each candidate has: kind, trigger, tags, domain, confidence (initial), content.
@@ -586,15 +597,31 @@ Registry configuration is stored in `~/.prism/registries.json` with per-registry
 
 ## Data Formats
 
-### Observations (JSONL)
+### Observations (SQLite)
 
-Location: `~/.prism/projects/<project_id>/observations.jsonl`
+Location: `~/.prism/prism.db` — one database shared across all projects.
 
-One JSON object per line:
+WAL mode is enabled for concurrent access. An FTS5 virtual table (`observations_fts`) mirrors `input_summary` for full-text search using Porter stemming, kept in sync via INSERT/DELETE/UPDATE triggers.
 
-```json
-{"timestamp":"2026-04-14T12:00:00Z","event":"tool_end","tool":"Write","input_summary":"Write to src/index.ts: ...","session":"abc123","project_id":"f4a3b2c1d0e9","source":"claude_code"}
-```
+**Schema**:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | Auto-increment |
+| `session_id` | TEXT | FK → `sessions.id` |
+| `project_id` | TEXT | 12-char project hash |
+| `event` | TEXT | `tool_start`, `tool_end`, `session_insight` |
+| `tool` | TEXT | Tool name |
+| `source` | TEXT | `claude_code` or `cursor` |
+| `input_summary` | TEXT | Compressed + scrubbed tool input |
+| `compressed` | INTEGER | Always `1` |
+| `intensity` | TEXT | Always `lite` |
+| `extracted_at` | INTEGER | Unix ts when extracted; `NULL` = pending |
+| `insight_type` | TEXT | Set on `session_insight` rows |
+| `evidence` | TEXT | Supporting text for insight rows |
+| `ts` | INTEGER | Unix timestamp |
+
+Extracted observations older than 30 days are purged by `prism maintain`.
 
 ### Engram files (Markdown + YAML frontmatter)
 
@@ -759,12 +786,21 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
   prism                          # CLI entry point
   config.json                    # User configuration
   constitution.md                # Safety principles (never overwritten)
+  prism.db                       # SQLite database — all observations + FTS5 index (shared across projects)
   lib/                           # Python library
     cli.py                       # Command router
     commands.py                  # Command implementations
     config.py                    # Config management
-    capture.py                   # Observation processor
+    capture.py                   # Observation processor (hot path)
+    storage.py                   # SQLite read/write layer
+    schema.py                    # SQLite schema DDL
+    observation_summary.py       # scrub → compress → truncate pipeline
+    compress.py                  # Prose compression (Cavemem-inspired)
+    text_tokenize.py             # Segment tokenizer (preserved vs. prose)
+    lexicon.py / lexicon.json    # Abbreviations, fillers, hedges, articles
+    expand.py                    # Inverse of compress (decompression)
     extract.py                   # Extraction pipeline
+    frontmatter.py               # Custom YAML frontmatter parser (no PyYAML)
     index.py                     # Index management (load/save/lock)
     mcp_server.py                # MCP server (stdio, JSON-RPC)
     sync.py                      # Context sync (.claude/prism.md)
@@ -773,14 +809,14 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
     project.py                   # Project detection
     trigger.py                   # Auto-extraction trigger
     bridge.py                    # Engram-to-skill promotion
-    scrub.py                     # Secret scrubbing
+    scrub.py                     # Secret scrubbing + adversarial detection
   hooks/
     capture.sh                   # Claude Code hook (PreToolUse)
   agents/
     extractor.md                 # Phase 1 extraction prompt (Haiku)
     validator.md                 # Phase 2 validation prompt (Sonnet)
     reviewer.md                  # Session review prompt
-  skills/                        # 12 slash commands
+  skills/                        # 13 slash commands
     analyze-agent-codebase/      # (8 files: SKILL.md + 7 question clusters)
     mine-history/
     mine-design/
@@ -791,6 +827,7 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
     publish-skills/
     advise-skills/
     audit-code/
+    find-vulnerabilities/
     run-analysis-pipeline/
     run-history-pipeline/
   index.json                     # Master engram index
@@ -801,7 +838,6 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
       *.md                       # Global engram files
   projects/
     <project-hash>/
-      observations.jsonl         # Raw observations
       engrams/
         *.md                     # Project-scoped engrams
   archive/                       # Archived (decayed) engrams

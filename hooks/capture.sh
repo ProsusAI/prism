@@ -11,11 +11,9 @@ set -euo pipefail
 PRISM_HOME="${PRISM_HOME:-$HOME/.prism}"
 PHASE="${1:-pre}"
 
-# Guard: don't capture during extraction
-[ -f "$PRISM_HOME/.extracting" ] && exit 0
-
 # Pipe stdin directly to Python - single invocation, no shell variable interpolation
-# If Python fails for any reason, exit 0 (never block Claude Code)
-python3 "$PRISM_HOME/lib/capture.py" "$PHASE" 2>/dev/null || true
+# (extraction lock only suppresses auto-extract spawn inside capture.py, not observation writes)
+# Errors go to capture.log (never block Claude Code — exit 0 always)
+python3 "$PRISM_HOME/lib/capture.py" "$PHASE" >>"$PRISM_HOME/capture.log" 2>&1 || true
 
 exit 0
