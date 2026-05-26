@@ -4,6 +4,20 @@ A knowledge layer for Claude Code adn Cursor. Prism watches how you work, learns
 
 **One install. Zero config for personal use. Registry config for teams.**
 
+## Important - Upgrading from before 26 May 2026
+
+Prism switched its observation storage from JSONL to SQLite. If you installed before this date, run the following once to migrate your data:
+
+```bash
+cd ~/Documents/prism          # your prism clone
+git pull
+python3 migrate_observations.py
+./install.sh
+```
+
+Then re-run `prism init` in each project you use Prism with.
+Your engrams are unaffected. The migration archives your old `.jsonl` files under `~/.prism/projects/` and imports them into `~/.prism/prism.db`.
+
 ## What it does
 
 **Personal learning** — Prism observes your sessions through hooks. When it sees recurring patterns (you always prefer TypeScript strict mode, you correct a certain approach, you follow a specific deployment procedure), it extracts those into "engrams" — living knowledge units that strengthen with evidence and decay without use.
