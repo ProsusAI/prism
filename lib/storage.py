@@ -57,9 +57,12 @@ def _active_count_sql(*, for_triggers: bool) -> tuple[str, tuple]:
 
 def _migrate_db(conn: sqlite3.Connection) -> None:
     """Apply any pending schema migrations. Called once per connection."""
-    version = conn.execute(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_version"
-    ).fetchone()[0]
+    try:
+        version = conn.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version"
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        return  # fresh DB; schema_version does not exist yet — init_db will create it
     if version < 2:
         conn.executescript(MIGRATION_V2)
         conn.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (2)")

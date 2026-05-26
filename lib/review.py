@@ -151,10 +151,10 @@ def _write_insights(insights: list, session_id: str, project_id: str) -> None:
     if not DB_PATH.exists():
         init_db(DB_PATH)
     for insight in insights:
-        summary = prepare_input_summary(insight["summary"])
+        summary = prepare_input_summary(insight["summary"], compress=False)
         if summary is None:
             continue
-        evidence_prepared = prepare_input_summary(insight.get("evidence", ""))
+        evidence_prepared = prepare_input_summary(insight.get("evidence", ""), compress=False)
         insert_observation(
             session_id=session_id,
             project_id=project_id,

@@ -509,7 +509,7 @@ tags: [manual]
 """
     filepath.write_text(content)
 
-    # Add to index
+    # Add to index; roll back file if index update fails to avoid orphaned files
     rel_path = str(filepath.relative_to(PRISM_HOME))
     entry = build_index_entry(
         entry_id=entry_id,
@@ -523,7 +523,12 @@ tags: [manual]
         evidence_count=1,
         tags=["manual"],
     )
-    add_entry(entry)
+    try:
+        add_entry(entry)
+    except Exception as e:
+        filepath.unlink(missing_ok=True)
+        print(f"Error: could not update index, rolled back file: {e}")
+        return
 
     print(f"Learned: {entry_id} (confidence: 0.9)")
     print(f"File: {filepath}")
@@ -540,6 +545,9 @@ def cmd_forget(entry_id: str, _skip_sync: bool = False) -> None:
         print(f"Entry not found: {entry_id}")
         return
 
+    # Remove from index first so a failed file move doesn't leave a dangling pointer
+    remove_entry(entry_id)
+
     # Move file to archive (validate path is non-empty and points to a file)
     source_path = PRISM_HOME / entry.get("path", "")
     if entry.get("path") and source_path.is_file():
@@ -548,9 +556,6 @@ def cmd_forget(entry_id: str, _skip_sync: bool = False) -> None:
         dest = archive_dir / source_path.name
         shutil.move(str(source_path), str(dest))
         print(f"Archived: {source_path.name} -> archive/")
-
-    # Remove from index
-    remove_entry(entry_id)
 
     if not _skip_sync:
         from .project import detect_project_id as _detect_pid
@@ -607,6 +612,7 @@ tags: [manual, correction]
 """
     filepath.write_text(content)
 
+    # Add to index; roll back file if index update fails to avoid orphaned files
     rel_path = str(filepath.relative_to(PRISM_HOME))
     entry = build_index_entry(
         entry_id=new_id,
@@ -620,7 +626,12 @@ tags: [manual, correction]
         evidence_count=1,
         tags=["manual", "correction"],
     )
-    add_entry(entry)
+    try:
+        add_entry(entry)
+    except Exception as e:
+        filepath.unlink(missing_ok=True)
+        print(f"Error: could not update index, rolled back file: {e}")
+        return
 
     # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
     from .sync import sync_claude_code
