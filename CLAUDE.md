@@ -14,6 +14,7 @@
 - **Custom YAML frontmatter parser** — never import PyYAML. Split on `---`, parse `key: value` lines.
 - **`subprocess.run()` not `os.system()`** — always use `capture_output=True, text=True, timeout=N`.
 - **MCP stdout is protocol-only** — any stray `print()` in lib code corrupts the JSON-RPC stream. All logging to stderr.
+- **Never read `.env` files** — config comes from `os.environ` only. No dotenv parsing, no opening `.env` files.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:research/STACK.md -->

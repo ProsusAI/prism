@@ -90,7 +90,7 @@ Then process each subsystem in sequence as described below.
 
 ### Phase 3a — Structured reading (probe questions)
 
-For the current subsystem, read its core files (entry points and main logic — skip tests, generated code, and vendor directories). While reading, answer these probe questions. These probes work for any codebase — they don't require domain knowledge.
+For the current subsystem, read its core files (entry points and main logic — skip tests, generated code, vendor directories, and `.env` files). While reading, answer these probe questions. These probes work for any codebase — they don't require domain knowledge.
 
 1. **Ordering constraints** — What must happen before X? What sequencing is enforced that isn't signaled by the function name?
 2. **Limits and sentinels** — What values are compared, truncated, or capped? Why those specific thresholds?

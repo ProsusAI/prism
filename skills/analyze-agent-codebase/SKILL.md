@@ -51,7 +51,7 @@ Build a structural map of the codebase. This must complete before Phase 2.
 2. Read anchor files if they exist:
    - Dependency manifests: pyproject.toml, requirements.txt, setup.py, package.json, go.mod, Cargo.toml
    - Entry points: main.py, app.py, index.ts, server.py, or files referenced in manifest scripts/entry_points
-   - Configuration: .env.example, config.py, settings.py, docker-compose.yml, Dockerfile
+   - Configuration: config.py, settings.py, docker-compose.yml, Dockerfile (must not read `.env`)
    - CI/CD: .github/workflows/*, Jenkinsfile, .github/workflows
 3. Extract: orchestration framework and version, LLM provider SDKs, and key infrastructure dependencies.
 4. Identify locations of: agent/graph definitions, tool definitions, state/memory definitions, tests, and deployment config live.
