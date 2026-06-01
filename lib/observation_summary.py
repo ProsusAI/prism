@@ -1,5 +1,7 @@
 """Prepare observation input_summary for SQLite: scrub, compress, truncate."""
 
+from __future__ import annotations
+
 from .scrub import MAX_PAYLOAD_LENGTH, is_blocked_text, scrub_text, truncate
 
 

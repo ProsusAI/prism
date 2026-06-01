@@ -1,5 +1,7 @@
 """Project detection via git remote URL hashing."""
 
+from __future__ import annotations
+
 import hashlib
 import os
 import subprocess

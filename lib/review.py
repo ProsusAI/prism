@@ -5,6 +5,8 @@ summaries, and produces enriched observations (event: "session_insight") that
 feed into the normal extraction pipeline.
 """
 
+from __future__ import annotations
+
 import json
 import subprocess
 import sys

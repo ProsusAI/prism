@@ -1,5 +1,7 @@
 """Analyze existing Claude Code session transcripts to bootstrap Prism observations."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os

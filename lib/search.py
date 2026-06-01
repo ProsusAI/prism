@@ -5,6 +5,8 @@ observations_fts virtual table that is maintained automatically by triggers
 on the observations table in prism.db.
 """
 
+from __future__ import annotations
+
 from .storage import search_observations_fts
 
 

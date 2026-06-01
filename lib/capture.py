@@ -9,6 +9,8 @@ CRITICAL: This runs on EVERY tool use. Keep it fast.
 CRITICAL: Never crash, never block. All exceptions swallowed.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys

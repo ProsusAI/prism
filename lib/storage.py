@@ -1,5 +1,7 @@
 """SQLite storage layer for Prism observations."""
 
+from __future__ import annotations
+
 import sqlite3
 import time
 from datetime import datetime, timezone

@@ -1,5 +1,7 @@
 """Extraction pipeline - Phase 1 (Haiku) and Phase 2 (Sonnet)."""
 
+from __future__ import annotations
+
 import json
 import os
 import subprocess
