@@ -628,6 +628,7 @@ def _parse_frontmatter(filepath: Path, project_id: str) -> "dict | None":
         success_count=int(frontmatter.get("success_count", 0)),
         failure_count=int(frontmatter.get("failure_count", 0)),
         pinned=bool(frontmatter.get("pinned", False)),
+        last_observed=frontmatter.get("last_observed") or None,
     )
 
 

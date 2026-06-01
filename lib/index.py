@@ -266,6 +266,7 @@ def build_index_entry(
     success_count: int = 0,
     failure_count: int = 0,
     pinned: bool = False,
+    last_observed: Optional[str] = None,
 ) -> dict:
     """Build a standard index entry dict."""
     return {
@@ -277,7 +278,7 @@ def build_index_entry(
         "scope": scope,
         "project_id": project_id,
         "path": path,
-        "last_observed": date.today().isoformat(),
+        "last_observed": last_observed or date.today().isoformat(),
         "evidence_count": evidence_count,
         "success_count": success_count,
         "failure_count": failure_count,
