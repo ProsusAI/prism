@@ -68,8 +68,21 @@ python3 << 'PYEOF'
 import json, os, urllib.request, urllib.error
 
 registry_url = ""  # <-- from Step 1
-token = os.environ.get("REGISTRY_TOKEN", "")
 skill_path = ""    # <-- path field from registry entry
+
+# Resolve token: env var override → registries.json entry for this registry
+token = os.environ.get("REGISTRY_TOKEN", "")
+if not token:
+    try:
+        reg_path = os.path.expanduser("~/.prism/registries.json")
+        with open(reg_path) as f:
+            regs = json.load(f)
+        for r in regs.get("registries", []):
+            if r.get("url", "").rstrip("/") == registry_url.rstrip("/"):
+                token = r.get("token", "")
+                break
+    except Exception:
+        pass
 
 req = urllib.request.Request(
     f"{registry_url}/file/{skill_path}/SKILL.md",
