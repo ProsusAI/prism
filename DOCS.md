@@ -610,9 +610,9 @@ WAL mode is enabled for concurrent access. An FTS5 virtual table (`observations_
 | `id` | INTEGER PK | Auto-increment |
 | `session_id` | TEXT | FK → `sessions.id` |
 | `project_id` | TEXT | 12-char project hash |
-| `event` | TEXT | `tool_start`, `tool_end`, `session_insight` |
+| `event` | TEXT | `tool_start`, `tool_end`, `tool_rejected`, `user_query`, `user_guidance`, `session_insight` |
 | `tool` | TEXT | Tool name |
-| `source` | TEXT | `claude_code` or `cursor` |
+| `source` | TEXT | `claude_code`, `cursor` (hooks), `session_import` (Claude JSONL), `cursor_transcript` (Cursor JSONL) |
 | `input_summary` | TEXT | Compressed + scrubbed tool input |
 | `compressed` | INTEGER | Always `1` |
 | `intensity` | TEXT | Always `lite` |

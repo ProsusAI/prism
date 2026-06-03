@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import re
 import subprocess
 from pathlib import Path
+
+from .config import PRISM_HOME
 
 _project_root_cache: str = ""
 
@@ -126,3 +130,72 @@ def _git_repo_root() -> str:
         return result.stdout.strip() if result.returncode == 0 else ""
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return ""
+
+
+def cursor_projects_path() -> Path:
+    """Map Cursor ~/.cursor/projects/<slug>/ folders to Prism project IDs."""
+    return PRISM_HOME / "cursor-projects.json"
+
+
+def cursor_project_slug(repo_root: str) -> str:
+    """Best-effort slug matching ~/.cursor/projects/<slug>/ folder names."""
+    normalized = os.path.normpath(os.path.abspath(repo_root))
+    if os.name == "nt":
+        slug = normalized.replace("\\", "-")
+        if len(slug) >= 2 and slug[1] == ":":
+            slug = slug[0] + slug[2:]
+    else:
+        slug = normalized.lstrip(os.sep)
+    return re.sub(r"[^a-zA-Z0-9]+", "-", slug)
+
+
+def register_cursor_project(project_id: str, repo_root: str) -> str:
+    """Record Cursor folder slug → project mapping. Returns the slug."""
+    slug = cursor_project_slug(repo_root)
+    path = cursor_projects_path()
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data[slug] = {"project_id": project_id, "root": repo_root}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    os.rename(str(tmp), str(path))
+    return slug
+
+
+def lookup_cursor_project(folder_name: str) -> tuple[str, str]:
+    """Resolve Cursor project folder name to (project_id, repo_root)."""
+    path = cursor_projects_path()
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+            entry = data.get(folder_name)
+            if isinstance(entry, dict):
+                pid = entry.get("project_id", "")
+                root = entry.get("root", "")
+                if pid:
+                    return pid, root
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+
+    projects_dir = PRISM_HOME / "projects"
+    if not projects_dir.is_dir():
+        return "", ""
+    for project_dir in projects_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        project_json = project_dir / "project.json"
+        if not project_json.is_file():
+            continue
+        try:
+            info = json.loads(project_json.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        root = info.get("root", "")
+        if root and cursor_project_slug(root) == folder_name:
+            return info.get("project_id", project_dir.name), root
+    return "", ""
