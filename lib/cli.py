@@ -176,6 +176,14 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
+    # Skip version check for internal/hook-called commands to avoid noise
+    if args.command not in ("sync", "maintain", "review", "unlock"):
+        try:
+            from .version_check import maybe_print_update_notice
+            maybe_print_update_notice()
+        except Exception:
+            pass
+
     # Route to handlers
     if args.command == "init":
         from .commands import cmd_init

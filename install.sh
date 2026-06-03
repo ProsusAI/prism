@@ -141,11 +141,19 @@ EOF
     chmod 600 "$PRISM_HOME/registries.json"
 fi
 
-# 9. Create symlink (SETUP-02)
+# 9. Record install metadata for version checks
+cp "$PRISM_REPO/VERSION" "$PRISM_HOME/VERSION" 2>/dev/null || true
+git -C "$PRISM_REPO" rev-parse HEAD > "$PRISM_HOME/.commit" 2>/dev/null || true
+echo "$PRISM_REPO" > "$PRISM_HOME/.install_source"
+git -C "$PRISM_REPO" remote get-url origin > "$PRISM_HOME/.source_url" 2>/dev/null || true
+# Invalidate stale update cache after an upgrade
+rm -f "$PRISM_HOME/.update_cache"
+
+# 10. Create symlink (SETUP-02)
 # Symlinks to the installed copy so updates via install.sh are picked up
 ln -sf "$PRISM_HOME/prism" "$BIN_DIR/prism"
 
-# 10. Check PATH
+# 11. Check PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
     echo "NOTE: $BIN_DIR is not in your PATH."
     echo "Add this to your shell profile (~/.zshrc or ~/.bashrc):"
