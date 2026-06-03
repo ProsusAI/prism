@@ -61,6 +61,53 @@ def is_correction_like(text: str) -> bool:
     return bool(_CORRECTION_RE.search(text))
 
 
+def is_cursor_guidance(text: str) -> bool:
+    """Cursor user turns are often long; detect corrections in short or long text."""
+    if not text or len(text) < 5:
+        return False
+    stripped = text.lstrip()
+    if stripped.startswith("<") and "<user_query>" not in stripped.lower():
+        return False
+    if len(text) <= 300:
+        return is_correction_like(text)
+    return bool(_CORRECTION_RE.search(text[:500]))
+
+
+def _message_text(msg: dict) -> str:
+    """Extract plain text from Claude Code or Cursor message payloads."""
+    content = msg.get("message", {}).get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            text = block.get("text", "")
+            if text:
+                parts.append(text)
+    return "\n".join(parts).strip()
+
+
+def _resolve_cursor_project(
+    folder_name: str,
+    jsonl_path: Path,
+    cwd_cache: dict[str, str],
+) -> tuple[str, str]:
+    """Return (project_id, cwd) for a Cursor agent-transcripts session."""
+    from .project import lookup_cursor_project
+
+    pid, root = lookup_cursor_project(folder_name)
+    if pid:
+        return pid, root
+
+    cwd = _extract_cwd(jsonl_path)
+    if cwd.startswith("/"):
+        return resolve_project_id_from_cwd(cwd, cwd_cache), cwd
+
+    return "global", root or folder_name
+
+
 def resolve_project_id_from_cwd(cwd: str, cache: dict) -> str:
     """Resolve a cwd path to a prism project_id using git."""
     if cwd in cache:
@@ -253,13 +300,8 @@ def list_cursor_sessions(
             if size == 0:
                 continue
 
-            # Try to extract cwd from the session file (most reliable).
-            # Cursor folder names are sanitized with hyphens replacing all
-            # non-alphanumerics — the reverse is ambiguous (a hyphen could
-            # be a slash, dot, space, or literal hyphen), so we never attempt
-            # to reconstruct a path from the folder name.
-            cwd = _extract_cwd(jsonl_file) or folder.name
-            pid = resolve_project_id_from_cwd(cwd, cwd_cache) if cwd else "global"
+            pid, resolved_root = _resolve_cursor_project(folder.name, jsonl_file, cwd_cache)
+            cwd = _extract_cwd(jsonl_file) or resolved_root or folder.name
 
             if project_filter and pid != project_filter:
                 continue
@@ -348,11 +390,118 @@ def _extract_cwd(jsonl_path: Path) -> str:
     return ""
 
 
-def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) -> dict:
+def analyze_session(
+    jsonl_path: Path,
+    project_id: str,
+    dry_run: bool = False,
+    *,
+    ide: str = "claude_code",
+) -> dict:
     """Analyze a single session file and write observations.
 
-    Returns: {session_id, observations_written, tool_calls, rejections, corrections}
+    Returns stats including tool_calls, rejections, corrections, user_queries.
     """
+    if ide == "cursor":
+        return _analyze_cursor_transcript(jsonl_path, project_id, dry_run=dry_run)
+    return _analyze_claude_transcript(jsonl_path, project_id, dry_run=dry_run)
+
+
+def _finalize_session_stats(
+    session_id: str,
+    observations: list[dict],
+    project_id: str,
+    dry_run: bool,
+) -> dict:
+    stats = {
+        "session_id": session_id,
+        "observations_written": len(observations),
+        "tool_calls": sum(1 for o in observations if o["event"] == "tool_start"),
+        "rejections": sum(1 for o in observations if o["event"] == "tool_rejected"),
+        "corrections": sum(1 for o in observations if o["event"] == "user_guidance"),
+        "user_queries": sum(1 for o in observations if o["event"] == "user_query"),
+    }
+    if not dry_run and observations:
+        ensure_dirs(project_id)
+        if not DB_PATH.exists():
+            init_db(DB_PATH)
+        insert_observations_batch(observations, db_path=DB_PATH)
+    return stats
+
+
+def _analyze_cursor_transcript(
+    jsonl_path: Path,
+    project_id: str,
+    *,
+    dry_run: bool,
+) -> dict:
+    """Parse Cursor agent-transcripts JSONL (role + text content blocks)."""
+    session_id = Path(jsonl_path).stem
+    observations: list[dict] = []
+
+    with open(jsonl_path) as f:
+        for line in f:
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            role = msg.get("type") or msg.get("role")
+            if role not in ("user", "assistant"):
+                continue
+
+            text = _message_text(msg)
+            if not text:
+                continue
+
+            timestamp = msg.get("timestamp", "")
+            sid = msg.get("sessionId", session_id)
+
+            if role == "user":
+                body = _unwrap_user_query(text)
+                event = "user_guidance" if is_cursor_guidance(body) else "user_query"
+                _append_observation(
+                    observations,
+                    raw_summary=body,
+                    timestamp=timestamp,
+                    event=event,
+                    tool="user",
+                    session=sid,
+                    project_id=project_id,
+                    source="cursor_transcript",
+                )
+            else:
+                for block in msg.get("message", {}).get("content", []) or []:
+                    if not isinstance(block, dict) or block.get("type") != "tool_use":
+                        continue
+                    tool_name = block.get("name", "")
+                    tool_input = block.get("input", {})
+                    if isinstance(tool_input, dict):
+                        input_summary = json.dumps(tool_input, ensure_ascii=False)
+                    elif isinstance(tool_input, str):
+                        input_summary = tool_input
+                    else:
+                        input_summary = str(tool_input)
+                    _append_observation(
+                        observations,
+                        raw_summary=input_summary,
+                        timestamp=timestamp,
+                        event="tool_start",
+                        tool=tool_name,
+                        session=sid,
+                        project_id=project_id,
+                        source="cursor_transcript",
+                    )
+
+    return _finalize_session_stats(session_id, observations, project_id, dry_run)
+
+
+def _analyze_claude_transcript(
+    jsonl_path: Path,
+    project_id: str,
+    *,
+    dry_run: bool,
+) -> dict:
+    """Parse Claude Code session JSONL (tool_use / tool_result blocks)."""
     session_id = Path(jsonl_path).stem
     tool_id_map: dict[str, str] = {}  # tool_use_id -> tool_name
     observations: list[dict] = []
@@ -490,21 +639,7 @@ def analyze_session(jsonl_path: Path, project_id: str, dry_run: bool = False) ->
                         source="session_import",
                     )
 
-    stats = {
-        "session_id": session_id,
-        "observations_written": len(observations),
-        "tool_calls": sum(1 for o in observations if o["event"] == "tool_start"),
-        "rejections": sum(1 for o in observations if o["event"] == "tool_rejected"),
-        "corrections": sum(1 for o in observations if o["event"] == "user_guidance"),
-    }
-
-    if not dry_run and observations:
-        ensure_dirs(project_id)
-        if not DB_PATH.exists():
-            init_db(DB_PATH)
-        insert_observations_batch(observations)
-
-    return stats
+    return _finalize_session_stats(session_id, observations, project_id, dry_run)
 
 
 def analyze_all_sessions(
@@ -564,7 +699,12 @@ def analyze_all_sessions(
             skipped += 1
             continue
 
-        stats = analyze_session(Path(sess["path"]), pid, dry_run=dry_run)
+        stats = analyze_session(
+            Path(sess["path"]),
+            pid,
+            dry_run=dry_run,
+            ide=sess.get("ide", "claude_code"),
+        )
         processed += 1
         total_obs += stats["observations_written"]
 
@@ -575,6 +715,8 @@ def analyze_all_sessions(
 
         # Print per-session detail
         parts = []
+        if stats.get("user_queries"):
+            parts.append(f"{stats['user_queries']} user queries")
         if stats["tool_calls"]:
             parts.append(f"{stats['tool_calls']} tool calls")
         if stats["rejections"]:

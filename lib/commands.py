@@ -35,6 +35,7 @@ from .project import (
     detect_project_id,
     detect_project_name,
     get_project_root,
+    register_cursor_project,
 )
 
 
@@ -64,15 +65,17 @@ def cmd_init() -> None:
         # Write project.json if not exists
         project_dir = PRISM_HOME / "projects" / project_id
         project_json = project_dir / "project.json"
+        repo_root = str(get_project_root())
         if not project_json.exists():
             info = {
                 "name": project_name,
-                "root": os.getcwd(),
+                "root": repo_root,
                 "remote": detect_project_remote(),
                 "project_id": project_id,
                 "last_seen": date.today().isoformat(),
             }
             project_json.write_text(json.dumps(info, indent=2) + "\n")
+        register_cursor_project(project_id, repo_root)
 
     # Configure hooks (settings.local.json) and MCP server (~/.claude.json)
     _setup_hooks_and_mcp(project_id)
