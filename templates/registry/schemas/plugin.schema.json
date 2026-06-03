@@ -57,6 +57,18 @@
     "source_hash": {
       "type": ["string", "null"],
       "description": "Content hash from source repo, or null if unavailable"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Human-readable skill name shown in registry UIs. Defaults to title-cased slug if omitted."
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["all", "restricted"],
+      "description": "Registry visibility. 'all' = visible to every authenticated caller; 'restricted' = uploader's company only.",
+      "default": "all"
     }
   }
 }

@@ -209,11 +209,13 @@ def _build_plugin_json(skill_name, entry, frontmatter, body):
 
     return {
         "name": skill_name,
+        "display_name": skill_name.replace("-", " ").title(),
         "description": _build_description(trigger, body, kind, domain),
         "author": _git_config("user.name"),
         "repository": _git_repo_name(),
         "category": _KIND_CATEGORY_MAP.get(kind, ["architecture"]),
         "source": "engram",
+        "visibility": "restricted",
         "commit_date": date.today().strftime("%d-%m-%Y"),
         "source_hash": _git_short_hash(),
     }

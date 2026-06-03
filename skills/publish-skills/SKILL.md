@@ -239,11 +239,13 @@ for skill_name, skill_dir in SKILLS_TO_PUBLISH:
 
     skills_payload.append({
         "name": plugin["name"],
+        "display_name": plugin.get("display_name", plugin["name"].replace("-", " ").title()),
         "description": plugin["description"],
         "author": plugin["author"],
         "repository": plugin["repository"],
         "category": plugin["category"],
         "source": plugin["source"],
+        "visibility": plugin.get("visibility", "restricted"),
         "commit_date": plugin["commit_date"],
         "source_hash": plugin["source_hash"],
         "content": content,
@@ -286,6 +288,8 @@ PYEOF
 - Include `User-Agent: Prism/1.0` to avoid Cloudflare bot detection
 - The `content` field contains the raw SKILL.md text (not base64 encoded)
 - All skills in a batch should have the same `repository` value
+- `display_name` is the human-readable label shown in registry UIs; falls back to title-cased slug
+- `visibility` controls who can see the skill: `"restricted"` (default) = uploader's company only; `"all"` = every authenticated user
 
 ### Step 5 -- Update delta tracking
 
