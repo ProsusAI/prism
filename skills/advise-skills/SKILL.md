@@ -104,7 +104,7 @@ PYEOF
 
 **If the skill was loaded from local sources:** Read `_analysis/extracted_skills_codebase/{name}/SKILL.md` directly.
 
-If a fetch succeeds for a remote skill, save the content to `~/.prism/skills/{name}/SKILL.md` using the Write tool so it is available locally next time.
+If a fetch succeeds for a remote skill, cache it and link it into the project: read `~/.prism/skills/_shared/cache-skill.md` and follow its steps. This saves the content to `~/.prism/skills/{name}/SKILL.md` and creates the `.claude/skills/{name}` symlink so the skill is immediately usable and fetchable.
 
 If a fetch fails, note the failure in the output but continue processing other confirmed skills.
 
