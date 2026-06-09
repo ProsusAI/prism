@@ -8,9 +8,9 @@
 ### Hard constraints
 
 - **Zero runtime Python dependencies** — every import must be stdlib. No pip installs for end users.
-- **Hooks never block Claude Code** — `capture.sh` must always exit 0; background spawns only.
+- **Hooks never block the IDE** — `capture.sh` (Claude Code) and `capture_cursor.sh` (Cursor) must always exit 0; background spawns only.
+- **Storage split** — observations + sessions live in SQLite (`~/.prism/prism.db`) via stdlib `sqlite3`. Engrams stay flat Markdown + YAML frontmatter; the engram index stays `index.json`. No external DB, no ORM.
 - **AI calls via `claude` CLI only** — never import the Anthropic SDK. `subprocess.run(["claude", "--print", "--model", "haiku", ...])`.
-- **No database** — flat files only: JSONL observations, JSON index, Markdown engrams with YAML frontmatter.
 - **Custom YAML frontmatter parser** — never import PyYAML. Split on `---`, parse `key: value` lines.
 - **`subprocess.run()` not `os.system()`** — always use `capture_output=True, text=True, timeout=N`.
 - **MCP stdout is protocol-only** — any stray `print()` in lib code corrupts the JSON-RPC stream. All logging to stderr.
@@ -26,30 +26,35 @@
 | Hooks / installer | Bash (POSIX-compatible) | `capture.sh` → `capture.py`. Avoid Bash 4+ features (macOS ships 3.2) |
 | AI calls | `claude` CLI (Haiku + Sonnet) | Haiku for extraction proposals, Sonnet for validation |
 | MCP server | Python stdio, JSON-RPC 2.0 | Protocol version `2025-03-26`. Tools only, no resources/prompts |
+| Storage | SQLite (stdlib `sqlite3`) + flat files | `prism.db` = observations + sessions + `observations_fts` (FTS5); `index.json` = engram index; Markdown engrams |
 | Registry API | Cloudflare Worker (TypeScript) | Wrangler 4.x, Node 22 LTS — for registry maintainers only, not end users |
 | Registry backend | GitHub repo | Versioning, PRs, CI, and hosting for free. No database needed |
 
-### Claude Code integration points
+### IDE integration points
 
-| Integration | Config location | Key detail |
-|-------------|----------------|------------|
-| Hook (observe) | `.claude/settings.local.json` → `PreToolUse` | `capture.sh pre` — PreToolUse only, exit 0 always |
-| MCP (query) | `.claude/settings.local.json` → `mcpServers.prism` | stdio subprocess, flush stdout after every write |
-| Skills (slash commands) | `.claude/skills/` symlinks → `~/.prism/skills/` | SKILL.md format, set up by `prism init` |
-| Context push | `.claude/prism.md` | Written by `prism sync`; read by Claude Code as project instructions |
+Prism supports **Claude Code and Cursor**; `prism init` configures both.
+
+| Integration | Claude Code | Cursor |
+|-------------|-------------|--------|
+| Hook (observe) | `.claude/settings.local.json` → `PreToolUse`, runs `capture.sh pre` | `.cursor/hooks.json` → `preToolUse`, runs `capture_cursor.sh pre` (sets `PRISM_SOURCE=cursor`) |
+| MCP (query) | `~/.claude.json` → `projects[cwd].mcpServers.prism` | `~/.cursor/mcp.json` → `mcpServers.prism` |
+| Skills | `.claude/skills/` symlinks → `~/.prism/skills/` | `.cursor/rules/` |
+| Context push | `.claude/prism.md` | `.cursor/rules/prism.mdc` |
+
+Shared rules: hooks are `preToolUse`-only (one observation per tool call) and exit 0 always; MCP is a stdio JSON-RPC subprocess (flush stdout after every write); context files are written by `prism sync` and read as project instructions.
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 - **Project ID** is SHA256[:12] of git remote URL (portable) or repo root path (fallback). Never hardcode it.
-- **Index writes** use `fcntl.flock` + atomic `os.rename` (write to `.tmp`, rename). A `.bak` is kept. Stale locks > 10 min are auto-broken.
-- **Observation appends** use `O_APPEND | O_WRONLY | O_CREAT` with a single `os.write()` call — atomic under POSIX PIPE_BUF (4096 bytes).
+- **Index writes** (`index.json`) use `fcntl.flock` + atomic `os.rename` (write to `.tmp`, rename). A `.bak` is kept. Stale locks > 10 min are auto-broken.
+- **Observations** are written to SQLite (`prism.db`) via `storage.insert_observation()`. The `observations_fts` (FTS5) virtual table is kept in sync by triggers. (Legacy per-project `observations.jsonl` was migrated to SQLite; `.migrated.*` leftovers may remain on disk.)
 - **Engram IDs** are kebab-case slugs derived from trigger text, max 60 chars.
 - **Frontmatter** is hand-parsed: split on `---` delimiters, parse `key: value` lines. No PyYAML.
-- **Secret scrubbing** runs before any observation is written to disk. Baseline patterns are hardcoded and cannot be disabled.
+- **Secret scrubbing** runs before any observation is persisted. Baseline patterns are hardcoded and cannot be disabled.
 - **Extraction lock**: `.extracting` file in `~/.prism/`. Lock > 10 min old = stale, auto-cleared.
-- **`capture.py`**: runs on every tool call — keep it fast. No imports beyond stdlib + `lib/scrub`.
+- **`capture.py`**: runs on every tool call — keep it fast. Imports stay within stdlib + `lib` internals (`observation_summary` → scrub/compress/truncate, `storage` → SQLite insert, `project`, `trigger`).
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
@@ -60,44 +65,60 @@
   prism                            # CLI entry point
   config.json                      # User config (thresholds, decay, registry URL)
   constitution.md                  # Safety principles — never overwritten on upgrade
-  index.json                       # Master engram index (all projects + global)
+  prism.db                         # SQLite: observations + sessions + observations_fts (FTS5)
+  index.json                       # Master engram index (all projects + global); .bak + .lock alongside
   lib/
     cli.py                         # Command router (argparse)
-    commands.py                    # Command implementations (init, learn, forget, disable, uninstall, ...)
-    capture.py                     # Observation processor — runs on every PreToolUse
+    commands.py                    # Command implementations (init, status, extract, review, learn, forget, sync, promote, registry, ...)
+    capture.py                     # Observation processor — runs on every PreToolUse / Cursor preToolUse
+    storage.py                     # SQLite storage layer (init_db, insert_observation, FTS search)
+    schema.py                      # SQLite schema + migrations (sessions, observations, observations_fts)
+    observation_summary.py         # Scrub → compress → truncate tool input before storage
+    compress.py / expand.py        # Lexicon-based summary compression / re-expansion
+    lexicon.py (+ lexicon.json)    # Abbreviation/expansion tables for compression
+    text_tokenize.py               # Code/path/url-aware tokenizer (protects spans from compression)
     extract.py                     # Two-phase extraction pipeline (Haiku → Sonnet)
     review.py                      # Session transcript review (background)
-    sessions.py                    # Session analysis + SQLite FTS5 search
-    sync.py                        # Writes .claude/prism.md from index
+    sessions.py                    # Session transcript import + analysis (Claude Code + Cursor JSONL)
+    search.py                      # FTS5 search over prism.db observations
+    sync.py                        # Writes .claude/prism.md + .cursor/rules/prism.mdc from index
     mcp_server.py                  # MCP stdio server (prism_search, prism_get, prism_relevant, prism_record)
-    index.py                       # Index load/save/lock/query
+    index.py                       # Engram index load/save/lock/query (index.json)
+    frontmatter.py                 # Sync engram Markdown YAML frontmatter to index.json
     config.py                      # Config management + PRISM_HOME resolution
     project.py                     # Project ID detection (git remote → path → global)
     trigger.py                     # Auto-extraction threshold check (spawns background)
     bridge.py                      # Engram → skill promotion (prism promote)
     registry.py                    # Registry add/remove/list/publish
-    search.py                      # SQLite FTS5 session search
     scrub.py                       # Secret scrubbing + adversarial prompt detection
+    version_check.py               # Daily installed-vs-remote commit check
   hooks/
     capture.sh                     # Claude Code PreToolUse hook
+    capture_cursor.sh              # Cursor preToolUse hook (sets PRISM_SOURCE=cursor)
   agents/
     extractor.md                   # Phase 1 prompt (Haiku)
     validator.md                   # Phase 2 prompt (Sonnet)
     reviewer.md                    # Session review prompt
-  skills/                          # 13 slash commands (symlinked into .claude/skills/ by prism init)
+  skills/                          # 12 slash commands (+ _shared helpers) symlinked into IDE skill dirs by prism init
   global/engrams/                  # Global-scope engrams (shared across projects)
   projects/<id>/                   # Per-project data
-    observations.jsonl
-    engrams/
-    candidates/
+    project.json                   # Project metadata (path, remote)
+    engrams/                       # Active engrams (Markdown + YAML frontmatter)
+    candidates/                    # Pending extraction candidates
   archive/                         # Decayed engrams (recoverable)
 
-<project>/.claude/
-  settings.local.json              # Hook + MCP config (written by prism init, gitignored)
-  prism.md                         # Active engrams injected as project instructions (gitignored)
-  skills/                          # Symlinks to ~/.prism/skills/ (gitignored)
-  .prism_project_id                # Cached project ID for hook performance (gitignored)
+<project>/
+  .claude/
+    settings.local.json            # Hook config — PreToolUse (written by prism init, gitignored)
+    prism.md                       # Active engrams injected as project instructions (gitignored)
+    skills/                        # Symlinks to ~/.prism/skills/ (gitignored)
+    .prism_project_id              # Cached project ID for hook performance (gitignored)
+  .cursor/
+    hooks.json                     # Cursor preToolUse hook (written by prism init)
+    rules/prism.mdc                # Active engrams as Cursor rules (written by prism sync)
 ```
+
+> MCP servers are registered user-level, not per-project: Claude Code in `~/.claude.json`, Cursor in `~/.cursor/mcp.json`.
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->
