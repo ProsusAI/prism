@@ -2,6 +2,7 @@
 .cursor/
 .planning/
 DEBUG_REPORT.md
+marketplace_plan.md
 */__pycache__/
 *.pyc
 *.pyo

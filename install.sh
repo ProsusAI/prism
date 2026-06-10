@@ -67,6 +67,11 @@ for datafile in "$PRISM_REPO"/lib/*.json; do
     [ -f "$datafile" ] || continue
     cp "$datafile" "$PRISM_HOME/lib/"
 done
+# Copy lib asset files (e.g. dashboard.html served by dashboard.py)
+for asset in "$PRISM_REPO"/lib/*.html; do
+    [ -f "$asset" ] || continue
+    cp "$asset" "$PRISM_HOME/lib/"
+done
 
 # 4b. Copy slash command skills (overwrite on upgrade)
 if [ -d "$PRISM_REPO/skills" ]; then

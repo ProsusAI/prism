@@ -129,6 +129,12 @@ def main() -> None:
     p_sessions.add_argument("--force", action="store_true",
                             help="Re-analyze sessions even if already processed")
 
+    # dashboard
+    p_dashboard = subparsers.add_parser("dashboard", help="Launch the local web dashboard")
+    p_dashboard.add_argument("--port", type=int, default=4318, help="Port to serve on (default 4318)")
+    p_dashboard.add_argument("--no-open", action="store_true", dest="no_open",
+                             help="Don't auto-open a browser")
+
     # config
     p_config = subparsers.add_parser("config", help="Get or set configuration")
     p_config.add_argument("key", nargs="?", help="Config key")
@@ -277,6 +283,10 @@ def main() -> None:
     elif args.command == "analyze-sessions":
         _cmd_analyze_sessions(args)
 
+    elif args.command == "dashboard":
+        from .dashboard import serve_dashboard
+        serve_dashboard(port=args.port, no_open=args.no_open)
+
     elif args.command == "config":
         from .commands import cmd_config
         cmd_config(args.key, args.value)
@@ -290,7 +300,7 @@ def main() -> None:
 
     # Safety net: check if auto-extraction should trigger
     # Skip for commands that already handle extraction or are too early
-    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", None):
+    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", "dashboard", None):
         try:
             from .project import detect_project_id
             from .trigger import maybe_trigger_extraction

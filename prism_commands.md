@@ -20,6 +20,7 @@
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format (requires confidence ≥ 0.7, evidence ≥ 3) |
 | `prism log [--last N] [--extractions] [--insights] [--rejected] [--json]` | Show recent observations or extraction history |
 | `prism config [key [value]]` | Get or set configuration values |
+| `prism dashboard [--port N] [--no-open]` | Launch a local web dashboard (default port 4318) — browse engrams per project, a Global section, an Overview (counts, by-kind, by-domain, thresholds), and connected Registries. Zero dependencies; reads `~/.prism/` read-only. Ctrl-C to stop. |
 | `prism registry <subcommand>` | Manage skill registries (see below) |
 
 ### `prism analyze-sessions` flags
