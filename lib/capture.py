@@ -268,9 +268,11 @@ def _spawn_background(prism_home: Path, args: list) -> None:
 def _check_session_sync(prism_home: Path, project_id: str) -> None:
     """Fire `prism sync` once per project per UTC-day.
 
-    Fires sync_claude_code -> reinforce_entries once per project per day, restoring
-    confidence-boost parity with MCP-queried engrams (which get +0.02 per search).
-    See quick task 260506-g5q.
+    Regenerates prism.md from the index so newly-created corrections/preferences and
+    decayed scores are reflected. Sync is READ-ONLY with respect to confidence -- it no
+    longer reinforces the engrams it selects (that was the circular rich-get-richer loop;
+    see confidence_plan.md §1). Confidence now moves only on real use-events: MCP retrieval,
+    or the overlap signal in review.py.
 
     Sentinel path: /tmp/prism_synced_{project_id}_{YYYYMMDD-UTC}
 

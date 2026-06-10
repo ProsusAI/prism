@@ -9,11 +9,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .config import PRISM_HOME, get_config, get_engrams_dir, ensure_dirs
+from .config import PRISM_HOME, PUSH_KINDS, get_config, get_engrams_dir, ensure_dirs
+from .confidence import decay
 from .storage import (
     count_active,
     count_active_insights,
     delete_observations_for_project,
+    delete_orphan_sessions,
     get_recent,
     get_insights,
 )
@@ -562,7 +564,7 @@ def cmd_status(project_id: Optional[str] = None) -> None:
 
 
 def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project") -> None:
-    """Manually teach a fact or preference. Creates with confidence 0.9."""
+    """Manually teach a fact or preference. Creates with confidence 0.8."""
     text = scrub_text(text)
     if is_blocked_text(text):
         print("Error: input matched a block pattern and was not saved.")
@@ -589,7 +591,7 @@ def cmd_learn(text: str, project_id: Optional[str] = None, scope: str = "project
 id: {entry_id}
 kind: preference
 trigger: "{text[:80]}"
-confidence: 0.9
+confidence: 0.8
 domain: general
 scope: {scope}
 project_id: {project_id}
@@ -611,7 +613,7 @@ tags: [manual]
         entry_id=entry_id,
         kind="preference",
         trigger=text[:80],
-        confidence=0.9,
+        confidence=0.8,
         domain="general",
         scope=scope,
         project_id=project_id,
@@ -626,7 +628,7 @@ tags: [manual]
         print(f"Error: could not update index, rolled back file: {e}")
         return
 
-    print(f"Learned: {entry_id} (confidence: 0.9)")
+    print(f"Learned: {entry_id} (confidence: 0.8)")
     print(f"File: {filepath}")
 
     # Auto-sync .claude/prism.md (CTX-04, D-07: synchronous)
@@ -691,7 +693,7 @@ def cmd_correct(entry_id: str, correction_text: str) -> None:
 id: {new_id}
 kind: correction
 trigger: "{correction_text[:80]}"
-confidence: 0.9
+confidence: 0.8
 domain: {domain}
 scope: {scope}
 project_id: {project_id}
@@ -714,7 +716,7 @@ tags: [manual, correction]
         entry_id=new_id,
         kind="correction",
         trigger=correction_text[:80],
-        confidence=0.9,
+        confidence=0.8,
         domain=domain,
         scope=scope,
         project_id=project_id,
@@ -733,7 +735,7 @@ tags: [manual, correction]
     from .sync import sync_claude_code
     sync_claude_code(project_id)
 
-    print(f"Corrected: {entry_id} -> {new_id} (confidence: 0.9)")
+    print(f"Corrected: {entry_id} -> {new_id} (confidence: 0.8)")
 
 
 def cmd_maintain(quiet: bool = False) -> None:
@@ -743,9 +745,11 @@ def cmd_maintain(quiet: bool = False) -> None:
             print(msg)
 
     config = get_config()
-    decay_rate = config.get("decay_rate_per_week", 0.05)
     archive_threshold = config.get("archive_threshold", 0.2)
     delete_threshold = config.get("delete_threshold", 0.0)
+    floor = config.get("decay_floor", 0.1)
+    half_life_days = config.get("decay_half_life_weeks", 4) * 7
+    grace = config.get("decay_grace_days", 3)
 
     # Pass 1: delete archive files whose confidence has reached the delete threshold
     archive_dir = PRISM_HOME / "archive"
@@ -789,23 +793,30 @@ def cmd_maintain(quiet: bool = False) -> None:
         if entry.get("pinned"):
             continue
 
-        last_obs = entry.get("last_observed", "")
-        if not last_obs:
+        # Decay is recomputed from confidence_base over idle days since last_used --
+        # a pure function of timestamps, so it never compounds across runs (confidence.py).
+        last_used = entry.get("last_used") or entry.get("last_observed", "")
+        if not last_used:
             continue
 
         try:
-            last_date = date.fromisoformat(last_obs)
+            last_date = date.fromisoformat(last_used)
         except ValueError:
             continue
 
-        weeks_since = (today - last_date).days / 7.0
-        if weeks_since <= 0:
+        idle_days = (today - last_date).days
+        if idle_days <= grace:
             continue
 
         old_conf = entry.get("confidence", 0.5)
-        new_conf = max(0.0, old_conf - (decay_rate * weeks_since))
+        base = entry.get("confidence_base", old_conf)
+        new_conf = decay(base, idle_days, floor, half_life_days, grace)
 
-        if new_conf < archive_threshold:
+        # PUSH_KINDS (corrections/preferences) decay for bookkeeping but are never
+        # auto-archived -- placement is by kind, not score (confidence_plan.md §5).
+        archivable = entry.get("kind") not in PUSH_KINDS
+
+        if archivable and new_conf < archive_threshold:
             source_path = PRISM_HOME / entry.get("path", "")
             if entry.get("path") and source_path.is_file():
                 archive_dir.mkdir(parents=True, exist_ok=True)
@@ -814,7 +825,7 @@ def cmd_maintain(quiet: bool = False) -> None:
             to_archive_ids.add(entry["id"])
             archived += 1
             log(f"  Archived: {entry['id']} (confidence: {old_conf:.2f} -> {new_conf:.2f})")
-        elif new_conf < old_conf:
+        elif new_conf != old_conf:
             entry["confidence"] = round(new_conf, 3)
             source_path = PRISM_HOME / entry.get("path", "")
             if entry.get("path") and source_path.is_file():
@@ -1014,6 +1025,9 @@ def cmd_uninstall(project_id: Optional[str] = None, yes: bool = False) -> None:
     deleted_obs = delete_observations_for_project(project_id)
     if deleted_obs:
         print(f"  Deleted {deleted_obs} observation(s) from prism.db")
+    orphans = delete_orphan_sessions()
+    if orphans:
+        print(f"  Reaped {orphans} orphaned session row(s) from prism.db")
 
     # Clear extraction lock if it belongs to this project
     lock = PRISM_HOME / ".extracting"
@@ -1117,6 +1131,9 @@ def cmd_reset(project_id: Optional[str] = None, yes: bool = False) -> None:
     deleted_obs = delete_observations_for_project(project_id)
     if deleted_obs:
         print(f"  Deleted {deleted_obs} observation(s) from prism.db")
+    orphans = delete_orphan_sessions()
+    if orphans:
+        print(f"  Reaped {orphans} orphaned session row(s) from prism.db")
 
     # Remove context file
     if prism_md.exists():

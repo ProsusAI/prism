@@ -335,6 +335,29 @@ def delete_observations_for_project(
         conn.close()
 
 
+def delete_orphan_sessions(db_path: Path | None = None) -> int:
+    """Delete session rows that have no remaining observations.
+
+    Sessions aren't project-scoped (only id + started_at; see schema), so a single
+    session can own observations across multiple projects. Deleting sessions by project
+    would cascade-delete other projects' observations. This reaps only sessions whose
+    observation children are all gone -- safe to call after a project delete.
+    """
+    path = db_path or DB_PATH
+    if not path.exists():
+        return 0
+    conn = _connect(path)
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM sessions WHERE id NOT IN "
+                "(SELECT DISTINCT session_id FROM observations)"
+            )
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def delete_by_session_ids(session_ids: list[str], db_path: Path | None = None) -> int:
     """Delete all observations for the given session IDs. Returns deleted count."""
     if not session_ids:

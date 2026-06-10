@@ -15,7 +15,7 @@ from pathlib import Path
 # Allow imports from parent dir (works both in repo and ~/.prism/)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.config import PRISM_HOME, get_config, get_engrams_dir, ensure_dirs
+from lib.config import PRISM_HOME, PUSH_KINDS, get_config, get_engrams_dir, ensure_dirs
 from lib.scrub import scrub_text, is_blocked_text
 from lib.index import (
     add_entry,
@@ -172,11 +172,13 @@ def _record(text, kind="preference", project_id=None, scope="project"):
     filepath = engrams_dir / f"{entry_id}.md"
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Corrections/preferences start at 0.8; other kinds at 0.9 (confidence_plan.md §0).
+    start_conf = 0.8 if kind in PUSH_KINDS else 0.9
     content = f"""---
 id: {entry_id}
 kind: {kind}
 trigger: "{text[:80]}"
-confidence: 0.9
+confidence: {start_conf}
 domain: general
 scope: {scope}
 project_id: {project_id}
@@ -195,7 +197,7 @@ Recorded via MCP during coding session.
     rel_path = str(filepath.relative_to(PRISM_HOME)) if str(filepath).startswith(str(PRISM_HOME)) else str(filepath)
     entry = build_index_entry(
         entry_id=entry_id, kind=kind, trigger=text[:80],
-        confidence=0.9, domain="general", scope=scope,
+        confidence=start_conf, domain="general", scope=scope,
         project_id=project_id, path=rel_path,
         evidence_count=1, tags=["manual", "mcp"],
     )
@@ -214,7 +216,7 @@ Recorded via MCP during coding session.
     except Exception:
         pass  # Don't let sync failure break MCP record
 
-    return {"id": entry_id, "status": "created", "confidence": 0.9}
+    return {"id": entry_id, "status": "created", "confidence": start_conf}
 
 
 def _reinforce_batch(entry_ids: list) -> None:

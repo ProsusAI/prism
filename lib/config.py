@@ -7,9 +7,24 @@ from pathlib import Path
 
 PRISM_HOME = Path(os.environ.get("PRISM_HOME", os.path.expanduser("~/.prism")))
 
+# Engram kinds routed to the prism.md PUSH lane (placed by kind, not confidence).
+# Everything else lives in the MCP pull lane. See confidence_plan.md §5.
+# These engrams decay for bookkeeping but are never auto-archived by low confidence --
+# a correction must stay visible even when its score has decayed (you can't predict
+# when the mistake recurs); eviction is by kind-level lifecycle, not by score.
+PUSH_KINDS = {"correction", "preference"}
+
 DEFAULT_CONFIG = {
     "extract_threshold": 15,        # observations before auto-extract triggers
-    "decay_rate_per_week": 0.05,    # confidence decay per week without observation
+    # --- Confidence protocol (confidence_plan.md) ---
+    # One impulse up (on a real use-event), one exponential curve down (on idle time).
+    "reinforce_alpha": 0.15,        # use-event impulse = ALPHA * (ceiling - confidence)
+    "confidence_ceiling": 1.0,      # impulse asymptote -- replaces the old hard 0.95 wall
+    "decay_half_life_weeks": 4,     # idle half-life; LAMBDA = ln2 / (weeks * 7)
+    "decay_grace_days": 3,          # no decay until idle exceeds this
+    "decay_floor": 0.1,             # decay asymptote (below archive_threshold so stale engrams rotate out)
+    "overlap_min_terms": 2,         # distinct shared terms before an injected engram counts as "used" this session
+    "decay_rate_per_week": 0.05,    # DEPRECATED (legacy linear decay) -- superseded by half-life decay
     "archive_threshold": 0.2,       # move to archive/ below this confidence
     "delete_threshold": 0.0,        # permanently delete from archive/ at or below this confidence
     "publish_min_confidence": 0.7,  # minimum confidence to publish to team
