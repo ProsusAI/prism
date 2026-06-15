@@ -2,6 +2,8 @@
 
 Comprehensive reference for Prism's architecture, data formats, pipelines, and configuration.
 
+> **Supported IDEs**: Prism works with both **Claude Code** and **Cursor**. `prism init` configures both automatically (hooks, MCP server, skills/rules, and context files). To keep this document readable, examples below mostly say "Claude Code" — unless a section calls out a difference, everything applies equally to Cursor. The integration-point differences (hook scripts, MCP registration paths, context file locations) are summarized in [Project Initialization](#project-initialization) and the [File System Layout](#file-system-layout).
+
 ---
 
 ## Table of Contents
@@ -108,7 +110,16 @@ cd your-project
 prism init
 ```
 
-`prism init` configures four integration points:
+`prism init` configures four integration points, for **both Claude Code and Cursor**:
+
+| Integration | Claude Code | Cursor |
+|-------------|-------------|--------|
+| Hook (observe) | `.claude/settings.local.json` → `PreToolUse` → `capture.sh pre` | `.cursor/hooks.json` → `preToolUse` → `capture_cursor.sh pre` (sets `PRISM_SOURCE=cursor`) |
+| MCP (query) | `~/.claude.json` → `projects[cwd].mcpServers.prism` | `~/.cursor/mcp.json` → `mcpServers.prism` |
+| Skills / rules | `.claude/skills/` symlinks | `.cursor/rules/` |
+| Context push | `.claude/prism.md` | `.cursor/rules/prism.mdc` |
+
+The sections below show the Claude Code form; the Cursor equivalent is configured at the same time.
 
 ### 1. Hooks
 
@@ -124,6 +135,8 @@ Adds a PreToolUse hook to `.claude/settings.local.json` (project-level):
   }
 }
 ```
+
+It also adds a `SessionStart` hook that runs `prism maintain --quiet` once per session to apply confidence decay (see [Engram Lifecycle](#engram-lifecycle)). The Cursor PreToolUse hook is written to `.cursor/hooks.json` and runs `capture_cursor.sh pre`, which sets `PRISM_SOURCE=cursor` so observations are tagged by their source.
 
 ### 2. MCP Server
 
@@ -184,9 +197,11 @@ Prism identifies projects by a stable hash derived from git metadata. Detection 
 
 ### Flow
 
+Both IDEs feed the same pipeline through their own hook script. Claude Code uses `capture.sh`; Cursor uses `capture_cursor.sh` (which sets `PRISM_SOURCE=cursor`). Both pipe straight into the same `capture.py`:
+
 ```
-Claude Code tool call
-  -> Hook fires (capture.sh)
+Claude Code / Cursor tool call
+  -> Hook fires (capture.sh / capture_cursor.sh)
     -> Reads JSON from stdin
     -> Pipes to python3 capture.py
       -> Scrubs secrets + adversarial block check
@@ -196,9 +211,11 @@ Claude Code tool call
       -> Checks extraction trigger threshold
 ```
 
+The only difference between the two is the `source` recorded on each observation (`claude_code` vs `cursor`).
+
 ### What gets captured
 
-Every PreToolUse event is written as a row in `~/.prism/prism.db`. Key columns:
+Every PreToolUse / preToolUse event is written as a row in `~/.prism/prism.db`. Key columns:
 
 | Column | Example value |
 |--------|---------------|
@@ -225,7 +242,7 @@ Compression failures fall back to scrubbed-only text so the hook never crashes.
 
 ### Hook safety
 
-- `capture.sh` always exits 0, even on errors
+- `capture.sh` (Claude Code) and `capture_cursor.sh` (Cursor) always exit 0, even on errors
 - Processing happens in the background (no user-perceived delay)
 - Stdin piped directly to a single Python process (avoids spawning multiple interpreters)
 - Secret scrubbing and adversarial block check run before any data is written to disk
@@ -293,10 +310,15 @@ Engrams are living knowledge units with confidence scores that change over time.
 ### Confidence model
 
 - **Initial confidence**: Set by the extraction pipeline (typically 0.4-0.7)
-- **Reinforcement**: When the same pattern is observed again, confidence increases. MCP queries also provide a small boost (0.02 per query, capped at 0.95)
-- **Decay**: Without reinforcement, confidence drops by `decay_rate_per_week` (default: 0.02) per week
-- **Archive**: Engrams below `archive_threshold` (default: 0.2) are moved to `~/.prism/archive/`
-- **Pinning**: Pinned engrams never decay
+- **Reinforcement**: When the same pattern is observed again, confidence increases. MCP queries also provide a small boost (+0.02 per query, capped at 0.95). Engrams pushed into the context file are reinforced the same way (+0.02, capped at 0.95) so they don't decay while actively in use.
+- **Decay**: Without reinforcement, confidence drops by `decay_rate_per_week` (default: 0.05) for each week since the engram was last observed (`new = old - decay_rate × weeks_since_last_observed`).
+- **Archive**: Engrams that decay below `archive_threshold` (default: 0.2) are moved to `~/.prism/archive/` (recoverable).
+- **Delete**: Archived engrams whose confidence has reached `delete_threshold` (default: 0.0) are permanently deleted on the next maintenance run.
+- **Pinning**: Pinned engrams never decay.
+
+### When decay runs
+
+Decay and archiving happen during `prism maintain`. This runs automatically once per session — `prism init` installs a `SessionStart` hook that calls `prism maintain --quiet` — and is itself rate-limited to at most once per calendar day (tracked by `last_maintained` in `index.json`). You can also run `prism maintain` manually at any time. A maintenance run that changes anything re-syncs the context file.
 
 ### Manual management
 
@@ -327,38 +349,54 @@ This scans existing Claude Code session transcripts and creates observations fro
 
 ## Context Injection
 
-Prism uses two channels to get knowledge into Claude Code sessions.
+Prism uses two channels to get knowledge into a session.
 
-### Push: `.claude/prism.md`
+### Push: context file
 
-Regenerated automatically by `prism learn`, `prism correct`, `prism forget`, and `prism maintain`. Claude Code reads this file as project instructions at session start.
+A single `sync` step writes the context file for both IDEs at once:
+- **Claude Code**: `.claude/prism.md`
+- **Cursor**: `.cursor/rules/prism.mdc` (same content, prefixed with an `alwaysApply: true` rule frontmatter block)
 
-**Content priority order**:
-1. Corrections (highest priority -- Claude must not repeat mistakes)
-2. Pinned entries
-3. Session-validated imports
-4. Top preferences (sorted by confidence)
+The IDE reads this file as project instructions/rules at session start. It is regenerated automatically by `prism init`, `prism learn`, `prism correct`, `prism forget`, `prism maintain` (when something changed), and the `prism_record` MCP tool. If no engrams qualify, the stale context files are removed.
+
+**Selection** — at most 10 entries are pushed (the rest stay searchable via MCP), chosen in this priority:
+1. Pinned entries (always included)
+2. Corrections with confidence ≥ 0.8 (must be pushed — Claude can't be relied on to search for past mistakes)
+3. Remaining entries by confidence, descending. Imported entries (`source: lens`) only earn a spot once reinforced past 0.80.
+
+Pushed entries are reinforced (+0.02) on each sync so active knowledge doesn't decay.
+
+**Rendered sections** (in order, each omitted if empty): Corrections, Pinned, Key Preferences, Session-Validated Codebase Patterns, and Publish-Ready (engrams that have crossed the promotion gates), followed by an MCP footer with `prism_search` / `prism_record` usage guidance.
 
 **Format**:
 
 ```markdown
+# Learned Knowledge (Prism)
 <!-- Updated: 2026-04-14T12:00:00Z | 8 pushed, 24 via MCP -->
 
 ## Corrections -- do NOT repeat these
+
 - When asked about testing: Use vitest, not jest
 
 ## Pinned
+
 - Deploy procedure: always run migrations first (0.90)
 
 ## Key Preferences
+
 - Use pnpm for package management (0.75)
 - Prefer TypeScript strict mode (0.72)
 
 ---
-*24 additional entries available via prism_search MCP tool*
+Full knowledge base (24 more entries) available via prism MCP tools.
+
+**Search** (`prism_search`): when encountering errors, starting tasks, or making design decisions.
+
+**Record** (`prism_record`): proactively record knowledge when you discover it:
+...
 ```
 
-Size is controlled by `max_context_lines` (default: 100).
+Size is controlled by `max_context_lines` (default: 100); the file is truncated past that limit.
 
 ### Pull: MCP Server
 
@@ -719,14 +757,17 @@ Location: `~/.prism/config.json`
 | Key | Default | Description |
 |-----|---------|-------------|
 | `extract_threshold` | 15 | Number of observations before auto-extraction triggers |
-| `decay_rate_per_week` | 0.02 | Confidence reduction per week without observation |
+| `decay_rate_per_week` | 0.05 | Confidence reduction per week since an engram was last observed |
 | `archive_threshold` | 0.2 | Archive engrams below this confidence |
+| `delete_threshold` | 0.0 | Permanently delete archived engrams at or below this confidence |
 | `publish_min_confidence` | 0.7 | Minimum confidence for skill promotion |
 | `publish_min_evidence` | 3 | Minimum evidence count for skill promotion |
-| `max_context_lines` | 100 | Maximum lines in generated .claude/prism.md |
+| `max_context_lines` | 100 | Maximum lines in generated context file (`.claude/prism.md` / `.cursor/rules/prism.mdc`) |
 | `review_interval` | 5 | Observations between automatic session reviews (0 = disabled) |
+| `review_cooldown_seconds` | 1800 | Minimum seconds between automatic reviews per session |
 | `review_timeout` | 60 | Seconds before review subprocess is killed |
 | `registry_url` | `""` | Team registry Worker URL |
+| `cache_max_age_hours` | 24 | Max age before a fetched registry cache is considered stale |
 | `scrub_patterns` | (see below) | Additional secret detection regex patterns |
 | `block_patterns` | (see below) | Adversarial prompt detection patterns |
 
@@ -879,14 +920,20 @@ Common issue: stray `print()` statements in lib code corrupt the JSON-RPC stream
 
 ### Extraction not triggering
 
-Check observation count:
+Observations live in SQLite (`~/.prism/prism.db`), not in per-project JSONL files anymore. Check the recent log and the count of pending (un-extracted) observations:
 
 ```bash
 prism log --last 5
-wc -l ~/.prism/projects/<your-project>/observations.jsonl
+
+# Pending observations for a project (this is what the trigger counts):
+sqlite3 ~/.prism/prism.db \
+  "SELECT COUNT(*) FROM observations
+   WHERE project_id = '<your-project-id>'
+     AND extracted_at IS NULL
+     AND event != 'session_insight';"
 ```
 
-Extraction triggers at `extract_threshold` observations (default: 15). Run manually with `prism extract`.
+Find `<your-project-id>` with `prism status`. Extraction triggers automatically once that count crosses `extract_threshold` (default: 15); `session_insight` rows are excluded from the trigger count. If a previous extract crashed mid-run, a stale lock can block new runs — clear it with `prism unlock`. Run extraction manually any time with `prism extract`.
 
 ### Engrams not appearing in Claude Code
 
