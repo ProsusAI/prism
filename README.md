@@ -14,6 +14,8 @@ A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns
 
 **One install. Zero config for personal use. Registry config for teams.**
 
+> 💡 Run `prism dashboard` to explore your projects and engrams in a local web UI.
+
 ## Important - Upgrading from before 26 May 2026
 
 Prism switched its observation storage from JSONL to SQLite. If you installed before this date, run the following once to migrate your data:
