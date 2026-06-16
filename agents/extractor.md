@@ -41,7 +41,9 @@ Record the problem, what failed and why, and what finally worked. A solution tha
 ### 4. Domain Facts (kind: domain_fact)
 Facts about the codebase, architecture, or business domain that a newcomer could not infer from reading the code. The user stated or confirmed these explicitly. Examples: "this service owns X", "we deliberately don't do Y because Z", "this algorithm was chosen for reason W", "that component is being rewritten, don't extend it".
 
-Require at least 2 references (user stated it, or it appeared in 2+ sessions).
+Require at least 1 reference (the user stated it, or it appears clearly in the code/session). A single explicit statement is enough — domain facts are typically learned once, not corroborated across sessions.
+
+Do NOT label a hard-won solution or design decision as a `domain_fact`. If the knowledge is "we chose X after Y failed" or "do X to make Z work", classify it as `solution` (kind: solution) where difficulty of discovery is the evidence — not `domain_fact`.
 
 ### 5. Error Recipes (kind: error_recipe)
 A specific error (not a general error class) that has a non-obvious fix. The error message or symptom plus the exact resolution. Seen 2+ times or stated as a known recurring issue by the user. Generic "check your imports" does not qualify.

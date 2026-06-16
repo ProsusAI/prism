@@ -37,15 +37,32 @@ Requirements:
 - Error recipes: minimum 2 occurrences
 - Procedures: minimum 2 sessions showing the same sequence
 - Corrections: minimum 1 clear user correction
-- Domain facts: minimum 2 references
+- Domain facts: minimum 1 reference (user stated it, or it appears in the code/sessions)
 - Direct user instruction (`prism learn`): exempt from minimums
+
+Counting rules:
+- A single session that independently demonstrates the same fact or sequence
+  multiple times (distinct observations, not restatements of one event) counts
+  toward the minimum. Do not collapse genuine repetition to "1 reference."
+- "References" need not be separate sessions unless the kind explicitly says
+  "sessions" (procedures). One well-evidenced session can satisfy a reference
+  minimum.
 
 Also check:
 - Are observation counts plausible? (don't trust inflated numbers)
 - Are session IDs cited? (vague evidence like "observed many times" is insufficient)
 - Is the evidence actually about what the entry claims?
 
-**FAIL** if evidence is insufficient or not credible.
+Before failing on count, check the kind is correct:
+- If a candidate labeled `domain_fact` is really a hard-won solution or design
+  decision discovered through work, re-classify it (decision **MODIFIED** →
+  `solution`, where difficulty of discovery is the evidence) rather than failing
+  on a reference count.
+
+**FAIL** only if evidence is missing, not credible, or inflated. If the evidence
+is credible but below the cross-session minimum, prefer **MODIFIED** with reduced
+confidence (cap ~0.4) over REJECTED — a low-confidence engram that never recurs
+will decay out on its own.
 
 ### Gate 3: Contradiction
 
@@ -75,12 +92,26 @@ Check for:
 
 Would a competent engineer working in this stack already know this?
 
+Judge the entry **as written**, including its project-specific scope — not a
+generalized paraphrase of it. A common principle instantiated as a concrete,
+named choice in this codebase is project-specific knowledge, not a platitude.
+
 Ask:
 - Is this derivable from the tool's documentation or common conventions?
 - Is this a generic best practice (run tests, check logs, use version control)?
 - Could this entry appear unchanged in any project's README or onboarding doc?
 
 If yes to any of these → **FAIL**.
+
+But do NOT fail as "generic" when:
+- The constitution or existing index shows the choice is an enforced project
+  constraint (e.g. "use MCP, not REST" when that is a documented rule here).
+- The abstract principle is common but the entry's *specific instantiation* is
+  the knowledge (e.g. "Haiku proposes, Sonnet validates" — the routing is
+  generic, the assignment is this project's).
+
+For borderline novelty, prefer **MODIFIED** (narrow the trigger, lower
+confidence) over REJECTED.
 
 What passes:
 - Solutions that required multiple failed attempts to discover
