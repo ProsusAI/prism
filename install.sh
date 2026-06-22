@@ -3,7 +3,7 @@
 # Usage: ./install.sh
 #
 # What it does:
-#   1. Checks prerequisites (python3, git required; claude CLI recommended)
+#   1. Checks prerequisites (python3, git required; claude or agent CLI recommended)
 #   2. Creates ~/.prism/ directory tree
 #   3. Copies hooks, agent prompts, lib, and templates
 #   4. Creates a symlink so `prism` is on your PATH
@@ -24,8 +24,11 @@ command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required but not
 # git is required (hard fail)
 command -v git >/dev/null 2>&1 || { echo "ERROR: git is required but not found."; exit 1; }
 
-# claude CLI is optional (soft warning)
-command -v claude >/dev/null 2>&1 || echo "WARNING: claude CLI not found. Needed for extraction (prism extract) but not for observation capture."
+# claude CLI is optional (soft warning) — Claude Code extraction path
+command -v claude >/dev/null 2>&1 || echo "WARNING: claude CLI not found. Needed for Claude Code extraction (prism extract) but not for observation capture."
+
+# Cursor agent CLI is optional (soft warning) — Cursor extraction path
+command -v agent >/dev/null 2>&1 || command -v cursor-agent >/dev/null 2>&1 || echo "WARNING: agent CLI not found. Cursor-only users need it for extraction. Install: curl https://cursor.com/install -fsS | bash"
 
 # Python version warning
 PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo '0.0')
@@ -110,6 +113,12 @@ if [ ! -f "$PRISM_HOME/config.json" ]; then
     cat > "$PRISM_HOME/config.json" << 'EOF'
 {
   "extract_threshold": 15,
+  "agent_backend": "auto",
+  "mixed_backend_preference": "cursor",
+  "cursor_models": {
+    "fast": "composer-2.5[fast=false]",
+    "strong": "claude-4.6-sonnet-medium"
+  },
   "review_interval": 5,
   "review_cooldown_seconds": 1800,
   "review_timeout": 60,

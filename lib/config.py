@@ -16,6 +16,12 @@ PUSH_KINDS = {"correction", "preference"}
 
 DEFAULT_CONFIG = {
     "extract_threshold": 15,        # observations before auto-extract triggers
+    "agent_backend": "auto",        # auto | claude | cursor — which CLI runs extraction/review
+    "mixed_backend_preference": "cursor",  # when pending obs are mixed: prefer this CLI if available
+    "cursor_models": {              # Cursor agent CLI (--model) when agent_backend resolves to cursor
+        "fast": "composer-2.5[fast=false]",
+        "strong": "claude-4.6-sonnet-medium",
+    },
     # --- Confidence protocol (confidence_plan.md) ---
     # One impulse up (on a real use-event), one exponential curve down (on idle time).
     "reinforce_alpha": 0.15,        # use-event impulse = ALPHA * (ceiling - confidence)

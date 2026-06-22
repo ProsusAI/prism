@@ -20,6 +20,6 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${P
 # Pipe stdin directly to Python - single invocation, no shell variable interpolation
 # (extraction lock only suppresses auto-extract spawn inside capture.py, not observation writes)
 # Errors go to capture.log (never block Claude Code — exit 0 always)
-python3 "$PRISM_HOME/lib/capture.py" "$PHASE" >>"$PRISM_HOME/capture.log" 2>&1 || true
+PRISM_SOURCE=claude_code python3 "$PRISM_HOME/lib/capture.py" "$PHASE" >>"$PRISM_HOME/capture.log" 2>&1 || true
 
 exit 0

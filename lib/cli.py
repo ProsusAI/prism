@@ -22,11 +22,21 @@ def main() -> None:
     # extract
     p_extract = subparsers.add_parser("extract", help="Run extraction on observations")
     p_extract.add_argument("--project", help="Override project ID")
+    p_extract.add_argument(
+        "--backend",
+        choices=["claude", "cursor"],
+        help="Force agent CLI backend (default: auto from config/observations)",
+    )
 
     # review
     p_review = subparsers.add_parser("review", help="Review current session for conversational insights")
     p_review.add_argument("--session", required=True, help="Session ID to review")
     p_review.add_argument("--project", help="Override project ID")
+    p_review.add_argument(
+        "--backend",
+        choices=["claude", "cursor"],
+        help="Force agent CLI backend (default: auto from config/observations)",
+    )
 
     # learn
     p_learn = subparsers.add_parser("learn", help="Manually teach a preference or fact")
@@ -211,7 +221,7 @@ def main() -> None:
         from .extract import run_extraction
         from .project import detect_project_id
         project_id = args.project or detect_project_id()
-        results = run_extraction(project_id)
+        results = run_extraction(project_id, backend=getattr(args, "backend", None))
         print("\nResults: {} extracted, {} approved, {} rejected, {} modified".format(
             results['extracted'], results['approved'],
             results['rejected'], results['modified']))
@@ -227,7 +237,7 @@ def main() -> None:
         from .review import run_review
         from .project import detect_project_id
         project_id = args.project or detect_project_id()
-        results = run_review(args.session, project_id)
+        results = run_review(args.session, project_id, backend=getattr(args, "backend", None))
         if results.get("insights", 0) > 0:
             print("Review complete: {} insights captured".format(results['insights']))
         else:

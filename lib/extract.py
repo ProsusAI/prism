@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -73,7 +72,7 @@ def _clear_batch_ids(project_id: str) -> None:
         pass
 
 
-def run_extraction(project_id: str) -> dict:
+def run_extraction(project_id: str, backend: str | None = None) -> dict:
     """Run the full extraction + validation pipeline.
 
     Returns {"extracted": N, "approved": N, "rejected": N, "modified": N}.
@@ -111,7 +110,7 @@ def run_extraction(project_id: str) -> dict:
                     "current active observations only if validation completes."
                 )
         else:
-            n_candidates, batch_ids = _phase1_extract(project_id)
+            n_candidates, batch_ids = _phase1_extract(project_id, backend=backend)
             if n_candidates < 0:
                 _clear_batch_ids(project_id)
                 # Hard failure (subprocess error, CLI missing, timeout) — preserve
@@ -125,7 +124,7 @@ def run_extraction(project_id: str) -> dict:
 
         # Phase 2: Sonnet validates candidates
         snapshot = _take_validation_snapshot(project_id)
-        results = _phase2_validate(project_id, snapshot)
+        results = _phase2_validate(project_id, snapshot, backend=backend)
         results["extracted"] = n_candidates
 
         rotate = _should_rotate_observations(results, n_candidates, project_id)
@@ -177,7 +176,7 @@ def _normalize_obs(obs: dict) -> dict:
     }
 
 
-def _phase1_extract(project_id: str) -> tuple[int, list[int] | None]:
+def _phase1_extract(project_id: str, backend: str | None = None) -> tuple[int, list[int] | None]:
     """Run Haiku extraction on observations.
 
     Returns (candidate_count, batch_observation_ids). ``batch_observation_ids``
@@ -222,30 +221,37 @@ Write candidate files to {candidates_dir}/. Project ID: {project_id}.
 No output text. Write files only.
 """
 
-        # Run claude --print --model haiku
-        try:
-            result = subprocess.run(
-                ["claude", "--print", "--model", "haiku", "-p", prompt,
-                 "--allowedTools", "Read,Write,Glob,Grep"],
-                capture_output=True, text=True, timeout=300,
-                cwd=str(PRISM_HOME),
+        from .agent_runner import cli_missing_message, failure_message, run_agent
+
+        result = run_agent(
+            prompt,
+            tier="fast",
+            timeout=300,
+            write_files=True,
+            project_id=project_id,
+            backend=backend,
+        )
+        if result.cli_missing:
+            print(cli_missing_message(result.backend))
+            _log_extract_error(
+                stage="phase1_subprocess",
+                reason=f"{result.backend} CLI not found",
             )
-            if result.returncode != 0:
-                # claude emits some failures (e.g. "Not logged in") on stdout, not
-                # stderr — fall back to stdout so the reason is never blank.
-                msg = (result.stderr.strip() or result.stdout.strip() or "(no output)")[:500]
-                print(f"Extraction failed: {msg}")
-                _log_extract_error(stage="haiku_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
-                _clear_batch_ids(project_id)
-                return -1, None
-        except FileNotFoundError:
-            print("Error: 'claude' CLI not found. Install Claude Code to use extraction.")
-            _log_extract_error(stage="haiku_subprocess", reason="claude CLI not found")
             _clear_batch_ids(project_id)
             return -1, None
-        except subprocess.TimeoutExpired:
+        if result.timed_out:
             print("Extraction timed out (300s limit).")
-            _log_extract_error(stage="haiku_subprocess", reason="timeout after 300s")
+            _log_extract_error(stage="phase1_subprocess", reason="timeout after 300s")
+            _clear_batch_ids(project_id)
+            return -1, None
+        if result.returncode != 0:
+            msg = failure_message(result)
+            print(f"Extraction failed: {msg}")
+            _log_extract_error(
+                stage="phase1_subprocess",
+                reason=f"returncode={result.returncode} backend={result.backend}",
+                raw_output=msg,
+            )
             _clear_batch_ids(project_id)
             return -1, None
     finally:
@@ -267,7 +273,7 @@ def _take_validation_snapshot(project_id: str) -> dict:
     }
 
 
-def _phase2_validate(project_id: str, snapshot: dict) -> dict:
+def _phase2_validate(project_id: str, snapshot: dict, backend: str | None = None) -> dict:
     """Run Sonnet validation on candidates. Returns results dict."""
     candidates_dir = get_candidates_dir(project_id)
     candidates = list(candidates_dir.glob("*.md"))
@@ -311,25 +317,32 @@ Exactly {n_candidates} elements — one per candidate, no omissions.
 ```
 """
 
-    try:
-        result = subprocess.run(
-            ["claude", "--print", "--model", "sonnet", "-p", prompt,
-             "--allowedTools", "Read,Write,Edit,Glob,Grep,Bash"],
-            capture_output=True, text=True, timeout=300,
-            cwd=str(PRISM_HOME),
-        )
-        if result.returncode != 0:
-            msg = (result.stderr.strip() or result.stdout.strip() or "(no output)")[:500]
-            print(f"Validation failed: {msg}")
-            _log_extract_error(stage="sonnet_subprocess", reason=f"returncode={result.returncode}", raw_output=msg)
-            return {"approved": 0, "rejected": 0, "modified": 0}
-    except FileNotFoundError:
-        print("Error: 'claude' CLI not found.")
-        _log_extract_error(stage="sonnet_subprocess", reason="claude CLI not found")
+    from .agent_runner import cli_missing_message, failure_message, run_agent
+
+    result = run_agent(
+        prompt,
+        tier="strong",
+        timeout=300,
+        write_files=True,
+        project_id=project_id,
+        backend=backend,
+    )
+    if result.cli_missing:
+        print(cli_missing_message(result.backend))
+        _log_extract_error(stage="phase2_subprocess", reason=f"{result.backend} CLI not found")
         return {"approved": 0, "rejected": 0, "modified": 0}
-    except subprocess.TimeoutExpired:
+    if result.timed_out:
         print("Validation timed out (300s limit).")
-        _log_extract_error(stage="sonnet_subprocess", reason="timeout after 300s")
+        _log_extract_error(stage="phase2_subprocess", reason="timeout after 300s")
+        return {"approved": 0, "rejected": 0, "modified": 0}
+    if result.returncode != 0:
+        msg = failure_message(result)
+        print(f"Validation failed: {msg}")
+        _log_extract_error(
+            stage="phase2_subprocess",
+            reason=f"returncode={result.returncode} backend={result.backend}",
+            raw_output=msg,
+        )
         return {"approved": 0, "rejected": 0, "modified": 0}
 
     # Parse validation results from output

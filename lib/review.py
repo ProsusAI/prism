@@ -8,7 +8,6 @@ feed into the normal extraction pipeline.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -18,7 +17,7 @@ from .index import load_index
 from .observation_summary import prepare_input_summary
 
 
-def run_review(session_id: str, project_id: str) -> dict:
+def run_review(session_id: str, project_id: str, backend: str | None = None) -> dict:
     """Run a background review of the current session conversation.
 
     Returns {"insights": N, "session_id": str, "status": str}.
@@ -52,17 +51,24 @@ def run_review(session_id: str, project_id: str) -> dict:
     if reviewer_prompt:
         prompt = reviewer_prompt + "\n\n---\n\n" + prompt
 
+    from .agent_runner import run_agent
+
     try:
-        result = subprocess.run(
-            ["claude", "--print", "--model", "haiku", "-p", prompt],
-            capture_output=True, text=True, timeout=timeout,
+        result = run_agent(
+            prompt,
+            tier="fast",
+            timeout=timeout,
+            project_id=project_id,
+            backend=backend,
         )
+        if result.cli_missing:
+            return {"insights": 0, "session_id": session_id, "status": "cli_not_found"}
+        if result.timed_out:
+            return {"insights": 0, "session_id": session_id, "status": "timeout"}
         if result.returncode != 0:
-            return {"insights": 0, "session_id": session_id, "status": "haiku_error"}
-    except FileNotFoundError:
-        return {"insights": 0, "session_id": session_id, "status": "cli_not_found"}
-    except subprocess.TimeoutExpired:
-        return {"insights": 0, "session_id": session_id, "status": "timeout"}
+            return {"insights": 0, "session_id": session_id, "status": "agent_error"}
+    except Exception:
+        return {"insights": 0, "session_id": session_id, "status": "agent_error"}
 
     insights = _parse_review_output(result.stdout)
     if insights:

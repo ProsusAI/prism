@@ -30,10 +30,10 @@ Comprehensive reference for Prism's architecture, data formats, pipelines, and c
 
 ## Architecture Overview
 
-Prism sits between Claude Code and a knowledge store. It has three layers:
+Prism sits between your IDE (Claude Code or Cursor) and a knowledge store. It has three layers:
 
 ```
-Claude Code Session
+Claude Code / Cursor session
   |                    |
   | hooks (observe)    | MCP (query)
   v                    v
@@ -51,14 +51,14 @@ Claude Code Session
 ~/.prism/  (file-based storage)
 ```
 
-**Personal layer**: Hooks capture tool usage as observations. An extraction pipeline (Haiku proposes, Sonnet validates) converts patterns into engrams. Engrams flow back into Claude Code through `.claude/prism.md` (push) and MCP tools (pull).
+**Personal layer**: Hooks capture tool usage as observations. A two-phase extraction pipeline (fast model proposes, strong model validates — via `claude` or Cursor `agent` depending on backend) converts patterns into engrams. Engrams flow back into the IDE through context files (push) and MCP tools (pull).
 
 **Team layer**: High-confidence engrams can be promoted to skill format. Slash commands mine codebases and git history for additional skills. Skills are published to a Cloudflare Worker-backed registry that teams query.
 
 **Key constraints**:
 - Zero runtime Python dependencies (stdlib only)
 - Hooks never block Claude Code (exit 0 always, background processing)
-- AI calls go through the `claude` CLI, not the Anthropic SDK
+- AI calls go through IDE-native CLIs (`claude` or Cursor `agent`), not the Anthropic SDK or cursor-sdk
 - Observations stored in SQLite (`prism.db`, WAL mode, FTS5); engrams, index, and config remain flat files (Markdown, JSON)
 
 ---
@@ -71,8 +71,13 @@ Claude Code Session
 |-------------|---------|----------|
 | Python | 3.12+ | Yes |
 | git | any | Yes |
-| Claude Code | current | Yes |
-| claude CLI | latest | Yes (for extraction) |
+| Claude Code **or** Cursor | current | Yes (one IDE) |
+| `claude` CLI | latest | For Claude Code extraction (`claude login`) |
+| `agent` CLI | latest | For Cursor extraction (`agent login`) |
+
+You need **one** extraction CLI for your IDE — not both. Observation capture works without either; engram generation does not. No Anthropic SDK, cursor-sdk, or API keys for the personal layer — only `claude login` or `agent login`.
+
+`prism init` configures hooks and MCP for **both** IDEs. If you use only one, the other integration files sit unused until you open that IDE.
 
 ### Install
 
@@ -83,7 +88,7 @@ git clone <repo-url> && cd prism
 
 ### What `install.sh` does
 
-1. **Checks prerequisites**: python3 (hard fail), git (hard fail), claude CLI (soft warning), Python 3.12+ (recommended warning)
+1. **Checks prerequisites**: python3 (hard fail), git (hard fail), claude or agent CLI (soft warning), Python 3.12+ (recommended warning)
 2. **Creates directory tree**: `~/.prism/{global/engrams, archive, hooks, agents, lib, skills, projects, schemas}`
 3. **Copies source files**: hooks/, agents/, lib/*.py, skills/*/, schemas/*.json, templates/
 4. **Writes defaults** (only if missing):
@@ -114,7 +119,7 @@ prism init
 
 | Integration | Claude Code | Cursor |
 |-------------|-------------|--------|
-| Hook (observe) | `.claude/settings.local.json` → `PreToolUse` → `capture.sh pre` | `.cursor/hooks.json` → `preToolUse` → `capture_cursor.sh pre` (sets `PRISM_SOURCE=cursor`) |
+| Hook (observe) | `.claude/settings.local.json` → `PreToolUse` → `capture.sh pre` (sets `PRISM_SOURCE=claude_code`) | `.cursor/hooks.json` → `preToolUse` → `capture_cursor.sh pre` (sets `PRISM_SOURCE=cursor`) |
 | MCP (query) | `~/.claude.json` → `projects[cwd].mcpServers.prism` | `~/.cursor/mcp.json` → `mcpServers.prism` |
 | Skills / rules | `.claude/skills/` symlinks | `.cursor/rules/` |
 | Context push | `.claude/prism.md` | `.cursor/rules/prism.mdc` |
@@ -136,7 +141,7 @@ Adds a PreToolUse hook to `.claude/settings.local.json` (project-level):
 }
 ```
 
-It also adds a `SessionStart` hook that runs `prism maintain --quiet` once per session to apply confidence decay (see [Engram Lifecycle](#engram-lifecycle)). The Cursor PreToolUse hook is written to `.cursor/hooks.json` and runs `capture_cursor.sh pre`, which sets `PRISM_SOURCE=cursor` so observations are tagged by their source.
+It also adds a `SessionStart` hook that runs `prism maintain --quiet` once per session to apply confidence decay (see [Engram Lifecycle](#engram-lifecycle)). The Claude Code hook (`capture.sh`) sets `PRISM_SOURCE=claude_code`; the Cursor hook (`capture_cursor.sh`) sets `PRISM_SOURCE=cursor` so observations are tagged by their source.
 
 ### 2. MCP Server
 
@@ -168,8 +173,8 @@ The PreToolUse hook fires on every tool call. It costs no tokens itself (pure fi
 
 | Background process | Trigger | Approximate cost |
 |---|---|---|
-| `prism review` (session insights) | Every 5 observations | ~2k–8k tokens (Haiku) |
-| `prism extract` (engram extraction) | Every 15 observations | ~5k–15k tokens (Haiku + Sonnet) |
+| `prism review` (session insights) | Every 5 observations | ~2k–8k tokens (fast tier per backend) |
+| `prism extract` (engram extraction) | Every 15 observations | ~5k–15k tokens (fast + strong tier per backend) |
 
 Users who want to control when AI calls happen can disable the hook and run extraction manually:
 
@@ -197,7 +202,7 @@ Prism identifies projects by a stable hash derived from git metadata. Detection 
 
 ### Flow
 
-Both IDEs feed the same pipeline through their own hook script. Claude Code uses `capture.sh`; Cursor uses `capture_cursor.sh` (which sets `PRISM_SOURCE=cursor`). Both pipe straight into the same `capture.py`:
+Both IDEs feed the same pipeline through their own hook script. Claude Code uses `capture.sh` (sets `PRISM_SOURCE=claude_code`); Cursor uses `capture_cursor.sh` (sets `PRISM_SOURCE=cursor`). Both pipe straight into the same `capture.py`:
 
 ```
 Claude Code / Cursor tool call
@@ -260,13 +265,33 @@ Extraction runs when:
 - Observation count crosses `extract_threshold` (default: 15) -- triggered automatically
 - User runs `prism extract` manually
 
-### Phase 1: Proposal (Haiku)
+### Phase 1: Proposal (fast model)
 
 The extractor agent (`agents/extractor.md`) reads recent observations and proposes candidate engrams:
 
 ```
-Observations (SQLite) -> claude --model haiku -> Candidate engrams (JSON)
+Observations (SQLite) -> agent CLI (fast tier) -> Candidate engrams (markdown)
 ```
+
+Backend selection (`lib/agent_runner.py`):
+
+| IDE | CLI | Phase 1 model (default) |
+|-----|-----|-------------------------|
+| Claude Code | `claude --print` | `haiku` |
+| Cursor | `agent -p` | `composer-2.5[fast=false]` |
+
+Resolution order: `--backend` flag → `PRISM_AGENT_BACKEND` → `config.agent_backend` → `PRISM_SOURCE` → unanimous pending source → mixed fallback (`mixed_backend_preference`) → `claude`.
+
+**Single-IDE and mixed projects**
+
+| Scenario | Auto-extract (from hook) | Manual `prism extract` |
+|----------|--------------------------|------------------------|
+| Claude Code only | `claude` CLI (`PRISM_SOURCE=claude_code`) | `claude` |
+| Cursor only | `agent` CLI (`PRISM_SOURCE=cursor`) | `agent` |
+| Mixed pending (both sources) | Calling IDE's CLI (hook passes `--backend` from `PRISM_SOURCE`) | `mixed_backend_preference` if that CLI is installed, else the other |
+| Unanimous pending (all one source) | That IDE's CLI | That IDE's CLI |
+
+`prism status` prints pending source counts and mixed-project hints when applicable. Force a backend: `prism extract --backend claude` or `prism extract --backend cursor`.
 
 Each candidate has: kind, trigger, tags, domain, confidence (initial), content.
 
@@ -280,9 +305,14 @@ Each candidate has: kind, trigger, tags, domain, confidence (initial), content.
 | `domain_fact` | Domain-specific knowledge relevant to the project |
 | `error_recipe` | Known solution to a recurring error |
 
-### Phase 2: Validation (Sonnet)
+### Phase 2: Validation (strong model)
 
 The validator agent (`agents/validator.md`) reviews each candidate through 4 safety gates:
+
+| IDE | CLI | Phase 2 model (default) |
+|-----|-----|-------------------------|
+| Claude Code | `claude --print` | `sonnet` |
+| Cursor | `agent -p --force` | `claude-4.6-sonnet-medium` |
 
 1. **Constitution check** -- Does this violate any safety principle in `constitution.md`?
 2. **Evidence check** -- Is there enough observation evidence to support this?
@@ -293,7 +323,7 @@ Only candidates passing all 4 gates are written as engrams.
 
 ### Session Review
 
-A separate reviewer agent (`agents/reviewer.md`) scans Claude Code session transcripts for conversational insights (corrections, preferences, decisions) that hooks might miss:
+A separate reviewer agent (`agents/reviewer.md`) scans session observations for conversational insights (corrections, preferences, decisions) that hooks might miss. Uses the **fast** model tier for the active backend (`haiku` or `composer-2.5[fast=false]`).
 
 ```bash
 prism review --session <session-id>
@@ -474,9 +504,9 @@ Writes a new engram immediately and auto-syncs `.claude/prism.md`.
 | `prism learn <text> [--scope project\|global]` | Manually create an engram |
 | `prism correct <id> <text>` | Supersede engram with correction |
 | `prism forget <id>` | Archive an engram |
-| `prism extract [--project ID]` | Run extraction pipeline on observations |
-| `prism review --session ID [--project ID]` | Analyze a session transcript |
-| `prism analyze-sessions [flags]` | Bootstrap from existing Claude Code sessions |
+| `prism extract [--project ID] [--backend claude\|cursor]` | Run extraction pipeline on observations |
+| `prism review --session ID [--project ID] [--backend claude\|cursor]` | Analyze a session transcript |
+| `prism analyze-sessions [flags]` | Bootstrap from existing Claude Code or Cursor session transcripts |
 | `prism unlock` | Force-clear a stuck extraction lock |
 | `prism disable hook` | Remove the background PreToolUse capture hook from this project |
 | `prism enable hook` | Re-add the PreToolUse capture hook |
@@ -757,6 +787,10 @@ Location: `~/.prism/config.json`
 | Key | Default | Description |
 |-----|---------|-------------|
 | `extract_threshold` | 15 | Number of observations before auto-extraction triggers |
+| `agent_backend` | `auto` | `auto`, `claude`, or `cursor` — which CLI runs extraction/review |
+| `mixed_backend_preference` | `cursor` | When pending observations are mixed, prefer this CLI if installed |
+| `cursor_models.fast` | `composer-2.5[fast=false]` | Cursor `agent --model` for phase 1 extract and session review |
+| `cursor_models.strong` | `claude-4.6-sonnet-medium` | Cursor `agent --model` for phase 2 validation |
 | `decay_rate_per_week` | 0.05 | Confidence reduction per week since an engram was last observed |
 | `archive_threshold` | 0.2 | Archive engrams below this confidence |
 | `delete_threshold` | 0.0 | Permanently delete archived engrams at or below this confidence |
@@ -793,6 +827,8 @@ Additional patterns can be added via `scrub_patterns` in config.
 |----------|-------------|
 | `PRISM_HOME` | Override default `~/.prism` location |
 | `PRISM_PROJECT_ID` | Override auto-detected project ID |
+| `PRISM_SOURCE` | Set by hooks (`claude_code` or `cursor`); influences `agent_backend: auto` |
+| `PRISM_AGENT_BACKEND` | Force extraction/review CLI: `claude` or `cursor` |
 | `REGISTRY_TOKEN` | Bearer token for registry API authentication |
 
 ---
@@ -816,7 +852,7 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
 - Index writes use file locking + atomic rename (no partial writes)
 - Hooks never block Claude Code (exit 0 always)
 - Subprocess calls use timeouts (default: 5s for git, 60s for reviews)
-- No network calls in the personal layer (extraction uses local `claude` CLI)
+- No network calls in the personal layer (extraction uses local `claude` or `agent` CLI subprocesses)
 
 ---
 
@@ -841,6 +877,7 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
     lexicon.py / lexicon.json    # Abbreviations, fillers, hedges, articles
     expand.py                    # Inverse of compress (decompression)
     extract.py                   # Extraction pipeline
+    agent_runner.py              # IDE agent CLI subprocess (claude / agent)
     frontmatter.py               # Custom YAML frontmatter parser (no PyYAML)
     index.py                     # Index management (load/save/lock)
     mcp_server.py                # MCP server (stdio, JSON-RPC)
@@ -852,10 +889,11 @@ Block patterns detect attempts to manipulate the extraction pipeline (e.g., "exp
     bridge.py                    # Engram-to-skill promotion
     scrub.py                     # Secret scrubbing + adversarial detection
   hooks/
-    capture.sh                   # Claude Code hook (PreToolUse)
+    capture.sh                   # Claude Code hook (PreToolUse; PRISM_SOURCE=claude_code)
+    capture_cursor.sh            # Cursor hook (preToolUse; PRISM_SOURCE=cursor)
   agents/
-    extractor.md                 # Phase 1 extraction prompt (Haiku)
-    validator.md                 # Phase 2 validation prompt (Sonnet)
+    extractor.md                 # Phase 1 extraction prompt (fast tier)
+    validator.md                 # Phase 2 validation prompt (strong tier)
     reviewer.md                  # Session review prompt
   skills/                        # 13 slash commands
     analyze-agent-codebase/      # (8 files: SKILL.md + 7 question clusters)

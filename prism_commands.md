@@ -8,9 +8,9 @@
 | `prism learn <text> [--scope project\|global]` | Manually create an engram (confidence 0.90) |
 | `prism correct <id> <text>` | Supersede an engram with a correction (archives old, creates new at 0.90) |
 | `prism forget <id>` | Archive an engram immediately |
-| `prism extract [--project ID]` | Run extraction pipeline on observations (Haiku proposes, Sonnet validates) |
-| `prism analyze-sessions [flags]` | Bootstrap observations from existing Claude Code session transcripts |
-| `prism review --session ID [--project ID]` | Analyze a single session transcript for conversational insights |
+| `prism extract [--project ID] [--backend claude\|cursor]` | Run extraction pipeline on observations (fast model proposes, strong model validates — via `claude` or `agent` per backend) |
+| `prism analyze-sessions [flags]` | Bootstrap observations from existing Claude Code or Cursor session transcripts |
+| `prism review --session ID [--project ID] [--backend claude\|cursor]` | Analyze a single session transcript for conversational insights |
 | `prism unlock` | Force-clear a stuck extraction lock (use if `prism extract` says "already in progress" after a crash) |
 | `prism disable hook` | Remove the background PreToolUse capture hook from `.claude/settings.local.json` — stops automatic observation capture and the AI extraction/review calls it triggers. MCP, skills, and all CLI commands remain fully functional. Use when you want to control token spend and run `prism analyze-sessions --extract` manually instead. |
 | `prism enable hook` | Re-add the PreToolUse capture hook (reverses `prism disable hook`) |

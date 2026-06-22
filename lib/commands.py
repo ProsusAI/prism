@@ -44,6 +44,35 @@ from .project import (
 )
 
 
+def _find_agent_cli() -> str:
+    """Resolve Cursor agent CLI binary (not the `cursor` editor launcher)."""
+    from .agent_runner import _find_agent_cli as find_cli
+    return find_cli()
+
+
+def _print_agent_cli_preflight() -> None:
+    """Warn when neither Claude nor Cursor agent CLIs are available for extraction."""
+    has_claude = bool(shutil.which("claude"))
+    has_agent = bool(_find_agent_cli())
+    if has_claude or has_agent:
+        if not has_claude:
+            print()
+            print("\033[33mNOTE: `claude` CLI not on PATH — Claude Code extraction will not run.\033[0m")
+            print("  Cursor users: use the `agent` CLI (see below). Claude Code: https://claude.com/claude-code")
+        if not has_agent:
+            print()
+            print("\033[33mNOTE: `agent` CLI not on PATH — Cursor extraction will not run.\033[0m")
+            print("  Install: curl https://cursor.com/install -fsS | bash")
+            print("  Then authenticate: agent login")
+        return
+
+    print()
+    print("\033[33mWARNING: no agent CLI found for extraction (need `claude` or `agent`).\033[0m")
+    print("  Observations will still be captured, but \033[1mno engrams will be generated\033[0m until you install one:")
+    print("  Claude Code: https://claude.com/claude-code  (`claude login`)")
+    print("  Cursor:      curl https://cursor.com/install -fsS | bash  (`agent login`)")
+
+
 def cmd_init() -> None:
     """Initialize prism for the current project.
 
@@ -111,15 +140,10 @@ def cmd_init() -> None:
     print("Start coding -- observations accumulate automatically.")
     print("Run \033[1mprism extract\033[0m after ~15 observations to generate engrams.")
 
-    # Preflight: extraction/review shell out to the `claude` CLI (Haiku proposes,
-    # Sonnet validates). Capture works without it, but no engrams will ever be
-    # produced — warn loudly here rather than failing silently in the background.
-    if not shutil.which("claude"):
-        print()
-        print("\033[33mWARNING: the `claude` CLI was not found on your PATH.\033[0m")
-        print("  Prism uses it to turn observations into engrams (extraction + review).")
-        print("  Observations will still be captured, but \033[1mno engrams will be generated\033[0m")
-        print("  until `claude` is installed and authenticated. Install: https://claude.com/claude-code")
+    # Preflight: extraction/review shell out to an IDE agent CLI. Capture works
+    # without it, but no engrams will ever be produced — warn here rather than
+    # failing silently in the background.
+    _print_agent_cli_preflight()
 
 
 def _setup_hooks_and_mcp(project_id: str) -> None:
@@ -143,7 +167,12 @@ def _setup_hooks_and_mcp(project_id: str) -> None:
 
     hooks = local.get("hooks", {})
     capture_script = str(PRISM_HOME / "hooks" / "capture.sh")
-    pre_command = capture_hook_command(capture_script, "pre", project_id)
+    pre_command = capture_hook_command(
+        capture_script,
+        "pre",
+        project_id,
+        extra_env={"PRISM_SOURCE": "claude_code"},
+    )
 
     for event in ("PreToolUse",):
         hook_groups = hooks.get(event, [])
@@ -544,6 +573,21 @@ def cmd_status(project_id: Optional[str] = None) -> None:
     if insights:
         line += f", {insights} insight(s)"
     print(line)
+
+    from .agent_runner import classify_pending_sources, pending_source_counts
+
+    pending_kind = classify_pending_sources(project_id)
+    if pending_kind == "mixed":
+        counts = pending_source_counts(project_id)
+        print(
+            f"  Pending sources: mixed ({counts['cursor']} cursor, "
+            f"{counts['claude']} claude_code)"
+        )
+        pref = config.get("mixed_backend_preference", "cursor")
+        print(
+            f"  Extraction: hook uses calling IDE; manual runs prefer "
+            f"{pref} when both CLIs are installed"
+        )
 
     # Archived count
     archive_dir = PRISM_HOME / "archive"

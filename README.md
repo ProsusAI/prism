@@ -49,7 +49,9 @@ git clone https://github.com/ProsusAI/prism.git && cd prism
 
 Requirements: Python 3.12+, git, [Claude Code](https://claude.ai/code) or [Cursor](https://cursor.com). The installer creates `~/.prism/` and symlinks the `prism` CLI to `~/.local/bin/prism`. Safe to re-run on upgrades.
 
-> **The `claude` CLI is required even if you only use Cursor.** Prism turns observations into knowledge by calling the `claude` CLI (Haiku proposes, Sonnet validates) — there is no Cursor-native extraction path. Without it, Prism still captures observations but will never generate engrams. Make sure `claude` is installed and logged in (`claude --version`).
+> **Extraction needs an IDE agent CLI — only the one you use.** Observations are captured automatically; engrams require either the **`claude` CLI** (Claude Code: fast `haiku` + strong `sonnet`) or the **`agent` CLI** (Cursor: `composer-2.5[fast=false]` + `claude-4.6-sonnet-medium`). You do **not** need both CLIs, the Anthropic SDK, cursor-sdk, or API keys — just IDE CLI login:
+> - **Claude Code:** `claude login`
+> - **Cursor:** `curl https://cursor.com/install -fsS | bash` then `agent login`
 
 **Check:** `prism --help` prints usage. If you get "command not found", add `~/.local/bin` to your PATH — the installer will have warned you if it's missing.
 
@@ -62,7 +64,9 @@ cd ~/your-project
 prism init
 ```
 
-**Check:** `.claude/settings.local.json` contains a `PreToolUse` hook pointing to `~/.prism/hooks/capture.sh`. That hook is how Prism observes your sessions.
+**Check:** `prism init` wires both IDEs (unused integration is harmless). Verify the hook for the IDE you use:
+- **Claude Code:** `.claude/settings.local.json` has a `PreToolUse` hook → `~/.prism/hooks/capture.sh`
+- **Cursor:** `.cursor/hooks.json` has a `preToolUse` hook → `~/.prism/hooks/capture_cursor.sh`
 
 ### 3. Teach a preference
 
@@ -72,7 +76,7 @@ Before waiting for automatic extraction, teach Prism something you know you alwa
 prism learn "always use conventional commits in this project"
 ```
 
-**Check:** `cat .claude/prism.md` shows the preference. `prism status` lists it with confidence `0.90` — that's the manual-teach starting confidence.
+**Check:** Context file shows the preference — `.claude/prism.md` (Claude Code) or `.cursor/rules/prism.mdc` (Cursor). `prism status` lists it with confidence `0.90` — that's the manual-teach starting confidence.
 
 
 ### 4. Let Prism learn from your previous sessions
@@ -104,7 +108,7 @@ prism status          # old entry gone, new one at confidence 0.90
 
 ### 6. Search a past session
 
-Prism can retrieve something specific you discussed in a past Claude session — useful for decisions you remember making but can't find. Search runs SQLite full-text under the hood, so use concrete words rather than paraphrased intent: `"retry backoff"` finds more than `"how we handle failures"`.
+Prism can retrieve something specific you discussed in a past session — useful for decisions you remember making but can't find. Search runs SQLite full-text under the hood, so use concrete words rather than paraphrased intent: `"retry backoff"` finds more than `"how we handle failures"`. Works for Claude Code and Cursor session transcripts.
 
 ```bash
 prism analyze-sessions "something specific you discussed" --last 10
@@ -137,11 +141,11 @@ prism status                                # show active engrams with confidenc
 **Observe and extract**
 
 ```bash
-prism log --last 20                # recent observations
-prism log --extractions            # extraction validation decisions
-prism log --rejected               # rejected candidates with failing gate reasons
-prism extract                      # run the extraction pipeline
-prism analyze-sessions --last 10   # mine past Claude sessions
+prism log --last 20                      # recent observations
+prism log --extractions                  # extraction validation decisions
+prism log --rejected                     # rejected candidates with failing gate reasons
+prism extract [--backend claude|cursor]  # run extraction (backend auto-detected by default)
+prism analyze-sessions --last 10         # mine past Claude Code or Cursor sessions
 ```
 
 ## Team skills
@@ -185,6 +189,18 @@ Engrams have a lifecycle: they start at a base confidence, strengthen when the s
 
 **Observation compression** — before any observation reaches the database, it goes through a compression pass that strips fillers, hedges, pleasantries, and articles from prose while leaving code blocks, file paths, URLs, commands, identifiers, version numbers, and dates completely unchanged. This reduces storage noise and keeps the context fed into the extraction pipeline tighter. All observations are stored at `intensity='lite'` by default. The compression logic is a modified version of [Cavemem](https://github.com/JuliusBrussee/cavemem)'s approach.
 
+### Claude Code, Cursor, or both
+
+Prism supports three usage patterns on the same project:
+
+| Pattern | What you need | Extraction CLI |
+|---------|---------------|----------------|
+| **Claude Code only** | `claude` + `claude login` | `claude` (`haiku` / `sonnet`) |
+| **Cursor only** | `agent` + `agent login` | `agent` (configured `cursor_models`) |
+| **Mixed** (team uses both IDEs) | Whichever CLIs your team uses | Auto: hook uses the **calling IDE**; manual `prism extract` picks unanimous pending source, or `mixed_backend_preference` when sources are mixed |
+
+Observations are tagged `claude_code` or `cursor` at capture time. `prism status` shows pending source mix when relevant. Override anytime: `prism extract --backend claude` or `--backend cursor`.
+
 ## Configuration
 
 ```bash
@@ -192,7 +208,7 @@ prism config                        # show all settings
 prism config extract_threshold 20   # change a setting
 ```
 
-Key settings: `extract_threshold` (observations before auto-extraction), `decay_rate_per_week`, `max_context_lines` (prism.md size), `registry_url` (team registry). Config lives at `~/.prism/config.json`.
+Key settings: `extract_threshold` (observations before auto-extraction), `agent_backend` (`auto`, `claude`, or `cursor`), `mixed_backend_preference` (which CLI to prefer when pending observations are mixed), `cursor_models` (fast/strong model IDs for the `agent` CLI), `decay_rate_per_week`, `max_context_lines` (prism.md size), `registry_url` (team registry). Config lives at `~/.prism/config.json`.
 
 ## Project structure
 
@@ -203,7 +219,7 @@ Key settings: `extract_threshold` (observations before auto-extraction), `decay_
   global/engrams/      # Cross-project knowledge
   projects/<hash>/     # Per-project engrams
   lib/                 # Python library
-  hooks/               # Claude Code hooks
+  hooks/               # Claude Code + Cursor capture hooks
   agents/              # AI agent prompts (extractor, validator, reviewer)
   skills/              # Slash commands
   schemas/             # Validation schemas

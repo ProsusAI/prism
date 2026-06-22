@@ -109,11 +109,18 @@ def request_auto_extraction(
         )
         return False
 
+    from .agent_runner import backend_from_prism_source
+
+    extract_args = [sys.executable, prism_cli, "extract", "--project", project_id]
+    hook_backend = backend_from_prism_source()
+    if hook_backend:
+        extract_args.extend(["--backend", hook_backend])
+
     log_path = PRISM_HOME / "extraction.log"
     try:
         with open(log_path, "a") as log_file:
             subprocess.Popen(
-                [sys.executable, prism_cli, "extract", "--project", project_id],
+                extract_args,
                 stdout=log_file,
                 stderr=log_file,
                 start_new_session=True,

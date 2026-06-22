@@ -12,11 +12,11 @@ PRISM_HOME="${PRISM_HOME:-$HOME/.prism}"
 PHASE="${1:-pre}"
 
 # Cursor launches this hook from the GUI app, whose PATH often omits ~/.local/bin
-# (where `prism` and `claude` are installed). Without these dirs, the background
-# `prism extract` this triggers cannot find the `claude` CLI it shells out to, so
+# (where `prism` and `agent` are installed). Without these dirs, the background
+# `prism extract` this triggers cannot find the `agent` CLI it shells out to, so
 # extraction silently produces zero engrams. Prepend the standard install dirs so
-# the whole spawned chain (prism -> claude) resolves regardless of Cursor's PATH.
-export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+# the whole spawned chain (prism -> agent) resolves regardless of Cursor's PATH.
+export PATH="$HOME/.local/bin:$HOME/.cursor/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
 PRISM_SOURCE=cursor python3 "$PRISM_HOME/lib/capture.py" "$PHASE" >>"$PRISM_HOME/capture.log" 2>&1 || true
 

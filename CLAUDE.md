@@ -1,15 +1,16 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**Prism** — knowledge layer for Claude Code. Two things:
-1. **Personal learning**: hooks observe tool usage, an extraction pipeline (Haiku proposes, Sonnet validates) converts patterns into engrams (living, decaying knowledge), engrams flow back into Claude Code via `.claude/prism.md` and MCP tools.
+**Prism** — knowledge layer for **Claude Code and Cursor**. Two things:
+1. **Personal learning**: hooks observe tool usage, a two-phase extraction pipeline (fast model proposes, strong model validates — via `claude` or Cursor `agent` per backend) converts patterns into engrams (living, decaying knowledge). Engrams flow back into the IDE via context files (`.claude/prism.md`, `.cursor/rules/prism.mdc`) and MCP tools.
 2. **Team skills**: high-confidence engrams promote to skills published to a Cloudflare Worker-backed registry that teams query.
 
 ### Hard constraints
 
 - **Hooks never block the IDE** — `capture.sh` (Claude Code) and `capture_cursor.sh` (Cursor) must always exit 0; background spawns only.
 - **Storage split** — observations + sessions live in SQLite (`~/.prism/prism.db`) via stdlib `sqlite3`. Engrams stay flat Markdown + YAML frontmatter; the engram index stays `index.json`. No external DB, no ORM.
-- **AI calls via `claude` CLI only** — never import the Anthropic SDK. `subprocess.run(["claude", "--print", "--model", "haiku", ...])`.
+- **AI calls via IDE CLIs only** — `claude --print` (Claude Code) or `agent -p` (Cursor). Never import the Anthropic SDK or cursor-sdk. No API keys for extraction. Routed through `lib/agent_runner.py` (`resolve_backend` + `run_agent`).
+- **One extraction CLI per user** — Claude-only needs `claude login`; Cursor-only needs `agent login`. Not both unless you use both IDEs.
 - **Custom YAML frontmatter parser** — never import PyYAML. Split on `---`, parse `key: value` lines.
 - **`subprocess.run()` not `os.system()`** — always use `capture_output=True, text=True, timeout=N`.
 - **MCP stdout is protocol-only** — any stray `print()` in lib code corrupts the JSON-RPC stream. All logging to stderr.
@@ -22,8 +23,8 @@
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | Library / CLI | Python 3.12+ (stdlib only) | `argparse`, `json`, `pathlib`, `subprocess`, `hashlib`, `fcntl` |
-| Hooks / installer | Bash (POSIX-compatible) | `capture.sh` → `capture.py`. Avoid Bash 4+ features (macOS ships 3.2) |
-| AI calls | `claude` CLI (Haiku + Sonnet) | Haiku for extraction proposals, Sonnet for validation |
+| Hooks / installer | Bash (POSIX-compatible) | `capture.sh` / `capture_cursor.sh` → `capture.py`. Avoid Bash 4+ features (macOS ships 3.2) |
+| AI calls | `claude` CLI or Cursor `agent` CLI | Claude: `haiku` / `sonnet`. Cursor: `cursor_models.fast` / `cursor_models.strong` (defaults: `composer-2.5[fast=false]`, `claude-4.6-sonnet-medium`). All via `lib/agent_runner.py`. |
 | MCP server | Python stdio, JSON-RPC 2.0 | Protocol version `2025-03-26`. Tools only, no resources/prompts |
 | Storage | SQLite (stdlib `sqlite3`) + flat files | `prism.db` = observations + sessions + `observations_fts` (FTS5); `index.json` = engram index; Markdown engrams |
 | Registry API | Cloudflare Worker (TypeScript) | Wrangler 4.x, Node 22 LTS — for registry maintainers only, not end users |
@@ -31,16 +32,18 @@
 
 ### IDE integration points
 
-Prism supports **Claude Code and Cursor**; `prism init` configures both.
+Prism supports **Claude Code and Cursor**; `prism init` configures both (unused IDE integration is inert until you use that IDE).
 
 | Integration | Claude Code | Cursor |
 |-------------|-------------|--------|
-| Hook (observe) | `.claude/settings.local.json` → `PreToolUse`, runs `capture.sh pre` | `.cursor/hooks.json` → `preToolUse`, runs `capture_cursor.sh pre` (sets `PRISM_SOURCE=cursor`) |
+| Hook (observe) | `.claude/settings.local.json` → `PreToolUse`, runs `capture.sh pre` (sets `PRISM_SOURCE=claude_code`) | `.cursor/hooks.json` → `preToolUse`, runs `capture_cursor.sh pre` (sets `PRISM_SOURCE=cursor`) |
 | MCP (query) | `~/.claude.json` → `projects[cwd].mcpServers.prism` | `~/.cursor/mcp.json` → `mcpServers.prism` |
 | Skills | `.claude/skills/` symlinks → `~/.prism/skills/` | `.cursor/rules/` |
 | Context push | `.claude/prism.md` | `.cursor/rules/prism.mdc` |
 
-Shared rules: hooks are `preToolUse`-only (one observation per tool call) and exit 0 always; MCP is a stdio JSON-RPC subprocess (flush stdout after every write); context files are written by `prism sync` and read as project instructions.
+**Extraction backend** (`agent_backend: auto`): `--backend` flag → `PRISM_AGENT_BACKEND` → `config.agent_backend` → `PRISM_SOURCE` → unanimous pending observation source → `mixed_backend_preference` when mixed → `claude`. Hook auto-extract passes `--backend` from `PRISM_SOURCE` (`trigger.py`). Manual `prism extract` on mixed pending prefers `mixed_backend_preference` when both CLIs are installed.
+
+Shared rules: hooks are `preToolUse`-only (one observation per tool call) and exit 0 always; hook scripts prepend `~/.local/bin` and `~/.cursor/bin` to PATH so background `prism extract` → `agent`/`claude` resolves from GUI-launched IDEs; MCP is a stdio JSON-RPC subprocess (flush stdout after every write); context files are written by `prism sync` and read as project instructions.
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
@@ -53,6 +56,8 @@ Shared rules: hooks are `preToolUse`-only (one observation per tool call) and ex
 - **Frontmatter** is hand-parsed: split on `---` delimiters, parse `key: value` lines. No PyYAML.
 - **Secret scrubbing** runs before any observation is persisted. Baseline patterns are hardcoded and cannot be disabled.
 - **Extraction lock**: `.extracting` file in `~/.prism/`. Lock > 10 min old = stale, auto-cleared.
+- **Observation `source`** — `claude_code` or `cursor` from hook env (`PRISM_SOURCE`); `session_import` / `cursor_transcript` from transcript mining.
+- **Extraction backend** — `lib/agent_runner.resolve_backend()`: override → env → config → `PRISM_SOURCE` → pending-source classification (`classify_pending_sources`) → default `claude`. Config keys: `agent_backend`, `mixed_backend_preference`, `cursor_models`.
 - **`capture.py`**: runs on every tool call — keep it fast. Imports stay within stdlib + `lib` internals (`observation_summary` → scrub/compress/truncate, `storage` → SQLite insert, `project`, `trigger`).
 <!-- GSD:conventions-end -->
 
@@ -62,7 +67,7 @@ Shared rules: hooks are `preToolUse`-only (one observation per tool call) and ex
 ```
 ~/.prism/                          # Runtime home (created by install.sh)
   prism                            # CLI entry point
-  config.json                      # User config (thresholds, decay, registry URL)
+  config.json                      # User config (thresholds, agent_backend, cursor_models, decay, registry URL)
   constitution.md                  # Safety principles — never overwritten on upgrade
   prism.db                         # SQLite: observations + sessions + observations_fts (FTS5)
   index.json                       # Master engram index (all projects + global); .bak + .lock alongside
@@ -76,7 +81,8 @@ Shared rules: hooks are `preToolUse`-only (one observation per tool call) and ex
     compress.py / expand.py        # Lexicon-based summary compression / re-expansion
     lexicon.py (+ lexicon.json)    # Abbreviation/expansion tables for compression
     text_tokenize.py               # Code/path/url-aware tokenizer (protects spans from compression)
-    extract.py                     # Two-phase extraction pipeline (Haiku → Sonnet)
+    extract.py                     # Two-phase extraction pipeline (fast → strong)
+    agent_runner.py                # IDE CLI backend resolution + subprocess (claude / agent)
     review.py                      # Session transcript review (background)
     sessions.py                    # Session transcript import + analysis (Claude Code + Cursor JSONL)
     search.py                      # FTS5 search over prism.db observations
@@ -87,18 +93,18 @@ Shared rules: hooks are `preToolUse`-only (one observation per tool call) and ex
     frontmatter.py                 # Sync engram Markdown YAML frontmatter to index.json
     config.py                      # Config management + PRISM_HOME resolution
     project.py                     # Project ID detection (git remote → path → global)
-    trigger.py                     # Auto-extraction threshold check (spawns background)
+    trigger.py                     # Auto-extract spawn (passes --backend from PRISM_SOURCE)
     bridge.py                      # Engram → skill promotion (prism promote)
     registry.py                    # Registry add/remove/list/publish
     scrub.py                       # Secret scrubbing + adversarial prompt detection
     version_check.py               # Daily installed-vs-remote commit check
   hooks/
-    capture.sh                     # Claude Code PreToolUse hook
-    capture_cursor.sh              # Cursor preToolUse hook (sets PRISM_SOURCE=cursor)
+    capture.sh                     # Claude Code PreToolUse hook (PRISM_SOURCE=claude_code)
+    capture_cursor.sh              # Cursor preToolUse hook (PRISM_SOURCE=cursor)
   agents/
-    extractor.md                   # Phase 1 prompt (Haiku)
-    validator.md                   # Phase 2 prompt (Sonnet)
-    reviewer.md                    # Session review prompt
+    extractor.md                   # Phase 1 prompt (fast tier)
+    validator.md                   # Phase 2 prompt (strong tier)
+    reviewer.md                    # Session review prompt (fast tier)
   skills/                          # 12 slash commands (+ _shared helpers) symlinked into IDE skill dirs by prism init
   global/engrams/                  # Global-scope engrams (shared across projects)
   projects/<id>/                   # Per-project data
