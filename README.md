@@ -1,8 +1,20 @@
+<div align="center">
+
+<img src="assets/prism.png" alt="Prism" width="520" />
+
 # Prism
 
-A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns your preferences, and makes Claude/Cursor remember them across sessions. For teams, it lets you share proven architectural knowledge through a shared registry.
+**Your work, refracted into knowledge AI coding tools remember**
+
+[Get started](#get-started) · [How it works](#how-it-works) · [Configuration](#configuration) · [Commands](#commands) 
+
+</div>
+
+A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns your preferences, and makes Claude/Cursor remember them across sessions. Are you working in a team? Share learnings in form of reusable skills. 
 
 **One install. Zero config for personal use. Registry config for teams.**
+
+> 💡 Run `prism dashboard` to explore your projects and engrams in a local web UI.
 
 ## Important - Upgrading from before 26 May 2026
 
@@ -95,8 +107,6 @@ Prism can retrieve something specific you discussed in a past Claude session —
 ```bash
 prism analyze-sessions "something specific you discussed" --last 10
 ```
-
-> This is a newer feature. Try it with something you genuinely discussed — note what works well and where it misses, that feedback is valuable.
 
 ### 7. Promote an engram to a skill
 

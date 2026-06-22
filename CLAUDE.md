@@ -7,7 +7,6 @@
 
 ### Hard constraints
 
-- **Zero runtime Python dependencies** — every import must be stdlib. No pip installs for end users.
 - **Hooks never block the IDE** — `capture.sh` (Claude Code) and `capture_cursor.sh` (Cursor) must always exit 0; background spawns only.
 - **Storage split** — observations + sessions live in SQLite (`~/.prism/prism.db`) via stdlib `sqlite3`. Engrams stay flat Markdown + YAML frontmatter; the engram index stays `index.json`. No external DB, no ORM.
 - **AI calls via `claude` CLI only** — never import the Anthropic SDK. `subprocess.run(["claude", "--print", "--model", "haiku", ...])`.
@@ -83,6 +82,7 @@ Shared rules: hooks are `preToolUse`-only (one observation per tool call) and ex
     search.py                      # FTS5 search over prism.db observations
     sync.py                        # Writes .claude/prism.md + .cursor/rules/prism.mdc from index
     mcp_server.py                  # MCP stdio server (prism_search, prism_get, prism_relevant, prism_record)
+    dashboard.py (+ dashboard.html)# Local web dashboard (`prism dashboard`) — stdlib http.server, reads ~/.prism read-only
     index.py                       # Engram index load/save/lock/query (index.json)
     frontmatter.py                 # Sync engram Markdown YAML frontmatter to index.json
     config.py                      # Config management + PRISM_HOME resolution

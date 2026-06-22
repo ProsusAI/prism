@@ -21,6 +21,7 @@
 | `prism stats [--days N] [--limit N] [--json] [--project ID]` | Show how often engrams are actually retrieved via MCP (prism_search/get/relevant) by Claude/Cursor: retrieval count + trend, search hit rate, Claude-vs-Cursor split, most-retrieved engrams, and engrams never pulled (forget candidates). Distinguishes engrams *pulled* on demand from engrams merely *surfaced* into prism.md by sync. |
 | `prism log [--last N] [--extractions] [--insights] [--rejected] [--json]` | Show recent observations or extraction history |
 | `prism config [key [value]]` | Get or set configuration values |
+| `prism dashboard [--port N] [--no-open]` | Launch a local web dashboard (default port 4318) — browse engrams per project, a Global section, an Overview (counts, by-kind, by-domain, thresholds), and connected Registries. Zero dependencies; reads `~/.prism/` read-only. Ctrl-C to stop. |
 | `prism registry <subcommand>` | Manage skill registries (see below) |
 
 ### `prism analyze-sessions` flags
