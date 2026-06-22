@@ -59,8 +59,11 @@ def main() -> None:
 
     project_id = detect_project_id()
 
-    # Build input summary: scrub, block check, compress, truncate (OBS-02, OBS-03)
-    summary = _prepare_summary(tool_input)
+    # Build input summary: scrub, block check, compress, truncate (OBS-02, OBS-03).
+    # Pass cwd as the project root so absolute paths are stored relative — cwd is
+    # free (the Cursor chdir above already set it), unlike get_project_root() which
+    # would add a git subprocess to every tool call.
+    summary = _prepare_summary(tool_input, os.getcwd())
     if summary is None:
         return  # block_patterns matched — do not persist
 
@@ -75,19 +78,47 @@ def main() -> None:
     _check_triggers(prism_home, project_id, obs_count, session_id)
 
 
-def _build_summary(tool_input) -> str:
+# Tool-input fields that never contribute to an engram. Identical across Claude
+# Code and Cursor (Cursor normalizes to the same tool schema). Dropping them
+# means the truncation budget goes to the high-value field (Write `content`,
+# Shell `command`, Edit `new_string`) instead of metadata like an always-empty
+# cwd or a constant timeout.
+_NOISE_KEYS = frozenset({"cwd", "timeout", "output_mode", "head_limit", "multiline", "-n"})
+
+
+def _strip_root(text: str, root: str) -> str:
+    """Rewrite absolute paths under the project root as relative ones.
+
+    The machine-specific prefix (e.g. /Users/<name>/Documents/<project>) repeats
+    on every observation — in file_path and embedded in shell `cd` commands — and
+    is pure noise that steals truncation budget from the high-value content. We
+    anchor strictly to the project root, so paths outside it keep their full path.
+    """
+    if not root or root == "/" or root not in text:
+        return text
+    # "/root/src/x.js" -> "src/x.js"; bare "/root" (e.g. `cd /root`) -> "."
+    return text.replace(root + "/", "").replace(root, ".")
+
+
+def _build_summary(tool_input, root: str = "") -> str:
     """Build a string summary from tool_input (may be dict, str, or other)."""
     if isinstance(tool_input, dict):
-        return json.dumps(tool_input, ensure_ascii=False)
+        cleaned = {
+            k: v for k, v in tool_input.items()
+            if k not in _NOISE_KEYS and v not in ("", None, [], {})
+        }
+        # Fall back to the original if cleaning emptied it (don't store "{}").
+        text = json.dumps(cleaned or tool_input, ensure_ascii=False)
     elif isinstance(tool_input, str):
-        return tool_input
+        text = tool_input
     else:
-        return str(tool_input)
+        text = str(tool_input)
+    return _strip_root(text, root)
 
 
-def _prepare_summary(tool_input) -> str | None:
+def _prepare_summary(tool_input, root: str = "") -> str | None:
     """Build, scrub, compress, and truncate tool input for storage."""
-    text = _build_summary(tool_input)
+    text = _build_summary(tool_input, root)
     return _prepare_input_summary(text)
 
 
@@ -268,9 +299,11 @@ def _spawn_background(prism_home: Path, args: list) -> None:
 def _check_session_sync(prism_home: Path, project_id: str) -> None:
     """Fire `prism sync` once per project per UTC-day.
 
-    Fires sync_claude_code -> reinforce_entries once per project per day, restoring
-    confidence-boost parity with MCP-queried engrams (which get +0.02 per search).
-    See quick task 260506-g5q.
+    Regenerates prism.md from the index so newly-created corrections/preferences and
+    decayed scores are reflected. Sync is READ-ONLY with respect to confidence -- it no
+    longer reinforces the engrams it selects (that was the circular rich-get-richer loop;
+    see confidence_plan.md §1). Confidence now moves only on real use-events: MCP retrieval,
+    or the overlap signal in review.py.
 
     Sentinel path: /tmp/prism_synced_{project_id}_{YYYYMMDD-UTC}
 

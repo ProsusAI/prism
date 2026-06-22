@@ -15,7 +15,7 @@ from pathlib import Path
 # Allow imports from parent dir (works both in repo and ~/.prism/)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.config import PRISM_HOME, get_config, get_engrams_dir, ensure_dirs
+from lib.config import PRISM_HOME, PUSH_KINDS, get_config, get_engrams_dir, ensure_dirs
 from lib.scrub import scrub_text, is_blocked_text
 from lib.index import (
     add_entry,
@@ -172,11 +172,13 @@ def _record(text, kind="preference", project_id=None, scope="project"):
     filepath = engrams_dir / f"{entry_id}.md"
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Corrections/preferences start at 0.8; other kinds at 0.9 (confidence_plan.md §0).
+    start_conf = 0.8 if kind in PUSH_KINDS else 0.9
     content = f"""---
 id: {entry_id}
 kind: {kind}
 trigger: "{text[:80]}"
-confidence: 0.9
+confidence: {start_conf}
 domain: general
 scope: {scope}
 project_id: {project_id}
@@ -195,7 +197,7 @@ Recorded via MCP during coding session.
     rel_path = str(filepath.relative_to(PRISM_HOME)) if str(filepath).startswith(str(PRISM_HOME)) else str(filepath)
     entry = build_index_entry(
         entry_id=entry_id, kind=kind, trigger=text[:80],
-        confidence=0.9, domain="general", scope=scope,
+        confidence=start_conf, domain="general", scope=scope,
         project_id=project_id, path=rel_path,
         evidence_count=1, tags=["manual", "mcp"],
     )
@@ -214,7 +216,7 @@ Recorded via MCP during coding session.
     except Exception:
         pass  # Don't let sync failure break MCP record
 
-    return {"id": entry_id, "status": "created", "confidence": 0.9}
+    return {"id": entry_id, "status": "created", "confidence": start_conf}
 
 
 def _reinforce_batch(entry_ids: list) -> None:
@@ -223,6 +225,25 @@ def _reinforce_batch(entry_ids: list) -> None:
         reinforce_entries(entry_ids)
     except Exception:
         pass  # Never let reinforcement break MCP responses
+
+
+def _log_retrieval(tool: str, query: str, entry_ids: list, project_id) -> None:
+    """Record a retrieval event for `prism stats` analytics.
+
+    Query is scrubbed before it touches disk. Writes to SQLite only -- never prints
+    (MCP stdout is protocol-only) and never raises (must not break an MCP response).
+    """
+    try:
+        from lib.storage import insert_retrieval
+        insert_retrieval(
+            project_id=project_id or "global",
+            source=os.environ.get("PRISM_SOURCE", "claude_code"),
+            tool=tool,
+            query=scrub_text(query or ""),
+            engram_ids=entry_ids,
+        )
+    except Exception:
+        pass
 
 
 # --- MCP Protocol ---
@@ -293,10 +314,11 @@ def _handle_tool_call(name, arguments):
             project_id=project_id,
             limit=arguments.get("limit", 5),
         )
+        ids = [r["id"] for r in results]
+        _log_retrieval("prism_search", arguments.get("query", ""), ids, project_id)
         if not results:
             return {"content": [{"type": "text", "text": "No matching entries found."}]}
-        if results:
-            _reinforce_batch([r["id"] for r in results])
+        _reinforce_batch(ids)
         lines = []
         for r in results:
             scope_tag = "[global]" if r.get("scope") == "global" else "[project]"
@@ -306,7 +328,9 @@ def _handle_tool_call(name, arguments):
     elif name == "prism_get":
         result = _get_entry_content(arguments["id"])
         if not result:
+            _log_retrieval("prism_get", arguments["id"], [], project_id)
             return {"content": [{"type": "text", "text": f"Entry '{arguments['id']}' not found."}], "isError": True}
+        _log_retrieval("prism_get", arguments["id"], [arguments["id"]], project_id)
         _reinforce_batch([arguments["id"]])
         return {"content": [{"type": "text", "text": result["content"]}]}
 
@@ -317,10 +341,12 @@ def _handle_tool_call(name, arguments):
             project_id=project_id,
             limit=arguments.get("limit", 5),
         )
+        ids = [r["id"] for r in results]
+        rel_query = arguments.get("file_path") or arguments.get("domain") or ""
+        _log_retrieval("prism_relevant", rel_query, ids, project_id)
         if not results:
             return {"content": [{"type": "text", "text": "No relevant entries for this context."}]}
-        if results:
-            _reinforce_batch([r["id"] for r in results])
+        _reinforce_batch(ids)
         lines = []
         for r in results:
             scope_tag = "[global]" if r.get("scope") == "global" else "[project]"

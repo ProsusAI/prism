@@ -8,12 +8,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import PRISM_HOME
-from .schema import SCHEMA_SQL, MIGRATION_V2
+from .schema import SCHEMA_SQL, MIGRATION_V2, MIGRATION_V3
 
 DB_PATH = PRISM_HOME / "prism.db"
 
 # Events that do not count toward review/extract auto-triggers (still extracted).
 _TRIGGER_EXCLUDED_EVENTS = ("session_insight",)
+
+# Retrieval analytics: which `retrievals.tool` values represent active pulls by
+# Claude/Cursor (vs sync_push, which is context injection, not active retrieval).
+_MCP_RETRIEVAL_TOOLS = ("prism_search", "prism_get", "prism_relevant")
+# Searches that can "miss" -- used for hit-rate. prism_get is a direct fetch, excluded.
+_HIT_RATE_TOOLS = ("prism_search", "prism_relevant")
+SYNC_PUSH_TOOL = "sync_push"
 
 
 def parse_observation_timestamp(raw: str) -> int | None:
@@ -68,6 +75,10 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
     if version < 2:
         conn.executescript(MIGRATION_V2)
         conn.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (2)")
+        conn.commit()
+    if version < 3:
+        conn.executescript(MIGRATION_V3)
+        conn.execute("INSERT OR IGNORE INTO schema_version(version) VALUES (3)")
         conn.commit()
 
 
@@ -335,6 +346,29 @@ def delete_observations_for_project(
         conn.close()
 
 
+def delete_orphan_sessions(db_path: Path | None = None) -> int:
+    """Delete session rows that have no remaining observations.
+
+    Sessions aren't project-scoped (only id + started_at; see schema), so a single
+    session can own observations across multiple projects. Deleting sessions by project
+    would cascade-delete other projects' observations. This reaps only sessions whose
+    observation children are all gone -- safe to call after a project delete.
+    """
+    path = db_path or DB_PATH
+    if not path.exists():
+        return 0
+    conn = _connect(path)
+    try:
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM sessions WHERE id NOT IN "
+                "(SELECT DISTINCT session_id FROM observations)"
+            )
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def delete_by_session_ids(session_ids: list[str], db_path: Path | None = None) -> int:
     """Delete all observations for the given session IDs. Returns deleted count."""
     if not session_ids:
@@ -456,6 +490,170 @@ def search_observations_fts(
         return [dict(r) for r in rows]
     except _sqlite3.OperationalError:
         return []
+    finally:
+        conn.close()
+
+
+def insert_retrieval(
+    project_id: str,
+    source: str,
+    tool: str,
+    query: str,
+    engram_ids: list[str],
+    db_path: Path | None = None,
+) -> int:
+    """Log one retrieval event (MCP pull or sync push) plus its returned engrams.
+
+    `query` must already be scrubbed by the caller. Writes the event row and one
+    `retrieval_engrams` row per returned/surfaced engram in a single transaction.
+    Returns the new `retrievals.id`. Counts are derived from these events at read
+    time -- this never touches the engram index or frontmatter.
+    """
+    path = db_path or DB_PATH
+    conn = _connect(path)
+    try:
+        ts = int(time.time())
+        with conn:
+            cur = conn.execute(
+                """INSERT INTO retrievals
+                   (project_id, source, tool, query, result_count, ts)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (project_id, source, tool, query or "", len(engram_ids), ts),
+            )
+            rid = cur.lastrowid
+            if engram_ids:
+                conn.executemany(
+                    "INSERT INTO retrieval_engrams(retrieval_id, engram_id, ts)"
+                    " VALUES (?, ?, ?)",
+                    [(rid, eid, ts) for eid in engram_ids],
+                )
+        return rid
+    finally:
+        conn.close()
+
+
+def retrieval_stats(
+    project_id: str,
+    window_seconds: int,
+    db_path: Path | None = None,
+) -> dict:
+    """Aggregate retrieval metrics for a project over the trailing `window_seconds`.
+
+    Returns MCP-retrieval counts for the window and the prior equal-length window
+    (for trend), the per-source split, search hit-rate components, and totals for
+    engrams surfaced via sync push. All values are derived from logged events.
+    """
+    empty = {
+        "window_retrievals": 0, "prior_retrievals": 0, "by_source": {},
+        "hit_searches": 0, "total_searches": 0,
+        "surfaced_pushes": 0, "surfaced_engrams": 0,
+    }
+    path = db_path or DB_PATH
+    if not path.exists():
+        return empty
+    now = int(time.time())
+    since = now - window_seconds
+    prior_since = since - window_seconds
+    mcp_ph = ",".join("?" * len(_MCP_RETRIEVAL_TOOLS))
+    hit_ph = ",".join("?" * len(_HIT_RATE_TOOLS))
+    conn = _connect(path)
+    try:
+        def _count(where: str, params: tuple) -> int:
+            return conn.execute(
+                f"SELECT COUNT(*) FROM retrievals WHERE {where}", params
+            ).fetchone()[0]
+
+        by_source = {
+            r["source"]: r["n"]
+            for r in conn.execute(
+                f"""SELECT source, COUNT(*) AS n FROM retrievals
+                    WHERE project_id = ? AND tool IN ({mcp_ph}) AND ts >= ?
+                    GROUP BY source""",
+                (project_id, *_MCP_RETRIEVAL_TOOLS, since),
+            ).fetchall()
+        }
+        surfaced_engrams = conn.execute(
+            """SELECT COUNT(*) FROM retrieval_engrams re
+               JOIN retrievals r ON re.retrieval_id = r.id
+               WHERE r.project_id = ? AND r.tool = ? AND re.ts >= ?""",
+            (project_id, SYNC_PUSH_TOOL, since),
+        ).fetchone()[0]
+        return {
+            "window_retrievals": _count(
+                f"project_id = ? AND tool IN ({mcp_ph}) AND ts >= ?",
+                (project_id, *_MCP_RETRIEVAL_TOOLS, since),
+            ),
+            "prior_retrievals": _count(
+                f"project_id = ? AND tool IN ({mcp_ph}) AND ts >= ? AND ts < ?",
+                (project_id, *_MCP_RETRIEVAL_TOOLS, prior_since, since),
+            ),
+            "by_source": by_source,
+            "hit_searches": _count(
+                f"project_id = ? AND tool IN ({hit_ph}) AND ts >= ? AND result_count > 0",
+                (project_id, *_HIT_RATE_TOOLS, since),
+            ),
+            "total_searches": _count(
+                f"project_id = ? AND tool IN ({hit_ph}) AND ts >= ?",
+                (project_id, *_HIT_RATE_TOOLS, since),
+            ),
+            "surfaced_pushes": _count(
+                "project_id = ? AND tool = ? AND ts >= ?",
+                (project_id, SYNC_PUSH_TOOL, since),
+            ),
+            "surfaced_engrams": surfaced_engrams,
+        }
+    finally:
+        conn.close()
+
+
+def top_engrams(
+    project_id: str,
+    since_ts: int,
+    limit: int = 10,
+    db_path: Path | None = None,
+) -> list[dict]:
+    """Most-retrieved engrams via MCP since `since_ts`. Returns [{id, count, last_ts}]."""
+    path = db_path or DB_PATH
+    if not path.exists():
+        return []
+    mcp_ph = ",".join("?" * len(_MCP_RETRIEVAL_TOOLS))
+    conn = _connect(path)
+    try:
+        rows = conn.execute(
+            f"""SELECT re.engram_id AS id, COUNT(*) AS count, MAX(re.ts) AS last_ts
+                FROM retrieval_engrams re
+                JOIN retrievals r ON re.retrieval_id = r.id
+                WHERE r.project_id = ? AND r.tool IN ({mcp_ph}) AND re.ts >= ?
+                GROUP BY re.engram_id
+                ORDER BY count DESC, last_ts DESC
+                LIMIT ?""",
+            (project_id, *_MCP_RETRIEVAL_TOOLS, since_ts, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def retrieved_engram_ids(
+    project_id: str,
+    since_ts: int,
+    db_path: Path | None = None,
+) -> set[str]:
+    """Set of engram IDs retrieved via MCP since `since_ts` (for dead-engram detection)."""
+    path = db_path or DB_PATH
+    if not path.exists():
+        return set()
+    mcp_ph = ",".join("?" * len(_MCP_RETRIEVAL_TOOLS))
+    conn = _connect(path)
+    try:
+        rows = conn.execute(
+            f"""SELECT DISTINCT re.engram_id
+                FROM retrieval_engrams re
+                JOIN retrievals r ON re.retrieval_id = r.id
+                WHERE r.project_id = ? AND r.tool IN ({mcp_ph}) AND re.ts >= ?""",
+            (project_id, *_MCP_RETRIEVAL_TOOLS, since_ts),
+        ).fetchall()
+        return {r[0] for r in rows}
     finally:
         conn.close()
 

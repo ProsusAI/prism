@@ -18,6 +18,7 @@
 | `prism uninstall [--yes] [--project ID]` | Remove all Prism integration from this project: hook, MCP entry, `.claude/prism.md`, skill symlinks, project data, and `.gitignore` entries. Undoes `prism init`. `~/.prism/` global install and other projects are untouched. Run `prism init` to re-initialize. |
 | `prism maintain` | Run confidence decay cycle; archive engrams below threshold. Runs automatically at session start. |
 | `prism promote <id> [--name NAME]` | Convert engram to publishable skill format (requires confidence ≥ 0.7, evidence ≥ 3) |
+| `prism stats [--days N] [--limit N] [--json] [--project ID]` | Show how often engrams are actually retrieved via MCP (prism_search/get/relevant) by Claude/Cursor: retrieval count + trend, search hit rate, Claude-vs-Cursor split, most-retrieved engrams, and engrams never pulled (forget candidates). Distinguishes engrams *pulled* on demand from engrams merely *surfaced* into prism.md by sync. |
 | `prism log [--last N] [--extractions] [--insights] [--rejected] [--json]` | Show recent observations or extraction history |
 | `prism config [key [value]]` | Get or set configuration values |
 | `prism dashboard [--port N] [--no-open]` | Launch a local web dashboard (default port 4318) — browse engrams per project, a Global section, an Overview (counts, by-kind, by-domain, thresholds), and connected Registries. Zero dependencies; reads `~/.prism/` read-only. Ctrl-C to stop. |

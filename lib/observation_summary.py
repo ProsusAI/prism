@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from .scrub import MAX_PAYLOAD_LENGTH, is_blocked_text, scrub_text, truncate
+from .scrub import is_blocked_text, scrub_text, truncate
+
+# Observation summaries keep more than scrub's generic 500-char security cap: the
+# high-value field (Write `content`, Shell `command`, Edit `new_string`) is what
+# extraction reads, and 500 chars truncated it away. Secrets are already removed
+# by scrub_text() before truncation, so a larger cap here is safe.
+MAX_OBSERVATION_LENGTH = 2000
 
 
 def prepare_input_summary(text: str, intensity: str = "lite", compress: bool = True) -> str | None:
@@ -19,11 +25,11 @@ def prepare_input_summary(text: str, intensity: str = "lite", compress: bool = T
     if is_blocked_text(scrubbed):
         return None
     if not compress:
-        return truncate(scrubbed, MAX_PAYLOAD_LENGTH)
+        return truncate(scrubbed, MAX_OBSERVATION_LENGTH)
     try:
         from .compress import compress as _compress
 
         body = _compress(scrubbed, intensity)
     except Exception:
         body = scrubbed
-    return truncate(body, MAX_PAYLOAD_LENGTH)
+    return truncate(body, MAX_OBSERVATION_LENGTH)

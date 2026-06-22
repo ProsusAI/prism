@@ -8,7 +8,8 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from .config import PRISM_HOME
+from .config import PRISM_HOME, get_config
+from .confidence import decay, reinforce
 
 
 def _index_path() -> Path:
@@ -131,6 +132,19 @@ def merge_file_entry_with_index(file_entry: dict, existing: dict) -> dict:
     for key in ("source", "published"):
         if key in existing:
             merged[key] = existing[key]
+    # confidence_base + last_used are index-only (not stored in engram frontmatter),
+    # so they survive a frontmatter resync only by being carried from the index row.
+    merged["last_used"] = max(
+        existing.get("last_used") or "",
+        file_entry.get("last_used") or existing.get("last_observed") or "",
+    )
+    merged["confidence_base"] = round(
+        max(
+            float(existing.get("confidence_base", existing.get("confidence", 0))),
+            merged["confidence"],
+        ),
+        3,
+    )
     return merged
 
 
@@ -216,33 +230,63 @@ def update_last_observed(entry_id: str, observed_date: Optional[str] = None) -> 
 
 
 def reinforce_entries(entry_ids: list[str]) -> int:
-    """Increment evidence_count, refresh last_observed, and boost confidence for a set of entries.
+    """Fire one use-event for a set of engrams: a daily-idempotent confidence impulse.
 
-    Loads the index once under lock, updates all matching entries, saves once. Used by
-    sync to credit engrams that were selected for the prism.md push layer --
-    otherwise context-injected engrams decay even while actively in use.
+    A use-event is a *real* use -- an MCP retrieval, or an overlap-detected application
+    of an injected (prism.md) engram. Both fire the identical impulse; they differ only
+    in trigger (confidence_plan.md §5).
 
-    Confidence is boosted by +0.02 (capped at 0.95), matching mcp_server.py so
-    push-layer engrams stay at parity with MCP-queried ones.
+    Idempotent once per UTC-day per engram: if an engram was already used today this is a
+    no-op for it. This is what kills multi-session inflation -- N parallel sessions (or N
+    background reviews in one session) crediting the same engram count as one impulse.
 
-    Returns the number of entries actually updated.
+    The impulse is diminishing-returns toward the ceiling (no hard 0.95 wall). It is
+    applied to the *current* confidence, which is first recomputed from confidence_base
+    by decaying over the idle interval -- so an engram that decayed since its last use
+    builds its impulse on the decayed value, keeping confidence_base self-consistent.
+
+    Returns the number of entries actually moved (already-used-today entries don't count).
     """
     if not entry_ids:
         return 0
     id_set = set(entry_ids)
-    today = date.today().isoformat()
+    today = date.today()
+    today_iso = today.isoformat()
+
+    config = get_config()
+    alpha = config.get("reinforce_alpha", 0.15)
+    ceiling = config.get("confidence_ceiling", 1.0)
+    floor = config.get("decay_floor", 0.1)
+    half_life_days = config.get("decay_half_life_weeks", 4) * 7
+    grace = config.get("decay_grace_days", 3)
+
     result = [0]
     synced: list[dict] = []
 
     def _fn(index):
         updated = 0
         for e in index["engrams"]:
-            if e["id"] in id_set:
-                e["evidence_count"] = e.get("evidence_count", 0) + 1
-                e["last_observed"] = today
-                e["confidence"] = round(min(0.95, e.get("confidence", 0.5) + 0.02), 3)
-                synced.append(dict(e))
-                updated += 1
+            if e["id"] not in id_set:
+                continue
+            if e.get("last_used") == today_iso:
+                continue  # already credited today -- kills multi-session inflation
+
+            base = float(e.get("confidence_base", e.get("confidence", 0.5)))
+            last_used = e.get("last_used") or e.get("last_observed")
+            try:
+                idle = (today - date.fromisoformat(last_used)).days if last_used else 0
+            except ValueError:
+                idle = 0
+            current = decay(base, max(0, idle), floor, half_life_days, grace)
+            new_base = reinforce(current, alpha, ceiling)
+
+            e["confidence_base"] = new_base
+            e["confidence"] = new_base
+            e["last_used"] = today_iso
+            e["last_observed"] = today_iso
+            e["evidence_count"] = e.get("evidence_count", 0) + 1
+            synced.append(dict(e))
+            updated += 1
         result[0] = updated
 
     _update_index(_fn)
@@ -267,18 +311,26 @@ def build_index_entry(
     failure_count: int = 0,
     pinned: bool = False,
     last_observed: Optional[str] = None,
+    last_used: Optional[str] = None,
 ) -> dict:
     """Build a standard index entry dict."""
+    today = date.today().isoformat()
     return {
         "id": entry_id,
         "kind": kind,
         "trigger": trigger,
         "confidence": round(confidence, 3),
+        # confidence_base = the value at the last use-event; decay is recomputed from
+        # this baseline so it never compounds across maintenance runs (see confidence.py).
+        "confidence_base": round(confidence, 3),
         "domain": domain,
         "scope": scope,
         "project_id": project_id,
         "path": path,
-        "last_observed": last_observed or date.today().isoformat(),
+        "last_observed": last_observed or today,
+        # last_used = last real use-event (MCP retrieval or overlap-detected application).
+        # Drives both reinforcement idempotency and decay. Distinct from last_observed.
+        "last_used": last_used or today,
         "evidence_count": evidence_count,
         "success_count": success_count,
         "failure_count": failure_count,

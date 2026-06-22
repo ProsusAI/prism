@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .config import PRISM_HOME, get_config, get_engrams_dir
-from .index import list_entries, load_index, reinforce_entries
+from .config import PRISM_HOME, PUSH_KINDS, get_config, get_engrams_dir
+from .index import list_entries, load_index
 from .project import get_project_root
 
 _CURSOR_FRONTMATTER = (
@@ -46,12 +46,29 @@ def sync_context(project_id: str, output_dir: Optional[str] = None) -> str:
                 stale.unlink()
         return ""
 
-    # Select what goes into the system prompt (the PUSH layer)
+    # Select what goes into the system prompt (the PUSH layer).
+    # NOTE: selection is READ-ONLY. It must never write confidence -- placement is a
+    # consequence of kind, never an input to the score (confidence_plan.md principle #1).
+    # The old reinforce_entries() call here was the circular "rich-get-richer" loop.
     prompt_entries = _select_prompt_entries(all_entries)
     publish_ready = _find_publish_ready(all_entries)
 
-    # Credit pushed engrams so they don't decay while actively in context
-    reinforce_entries([e["id"] for e in prompt_entries])
+    # Log the surfacing event so `prism stats` can distinguish engrams *pushed* into
+    # context from engrams Claude actively *pulled* via MCP. This is logging only -- it
+    # records WHICH engrams were surfaced, and deliberately does NOT reinforce them
+    # (selection stays read-only on confidence, per confidence_plan.md principle #1).
+    # Never fatal.
+    try:
+        from .storage import insert_retrieval, SYNC_PUSH_TOOL
+        insert_retrieval(
+            project_id=project_id,
+            source="sync",
+            tool=SYNC_PUSH_TOOL,
+            query="",
+            engram_ids=[e["id"] for e in prompt_entries],
+        )
+    except Exception:
+        pass
 
     # Categorize selected entries
     corrections = [e for e in prompt_entries if e.get("kind") == "correction"]
@@ -180,39 +197,33 @@ sync_claude_code = sync_context
 
 
 def _select_prompt_entries(entries: list, max_items: int = 10) -> list:
-    """Select which entries get pushed into the system prompt.
+    """Select which entries get pushed into the system prompt (the PUSH lane).
 
-    Priority order:
-    1. Pinned entries (always included)
-    2. Corrections with conf >= 0.8 (must be pushed -- Claude can't search for past mistakes)
-    3. Top N by confidence -- but imports only if session-reinforced (conf > 0.80)
+    Routing is by KIND, not by confidence (confidence_plan.md §5). The push lane is the
+    small, reserved channel for knowledge whose value exists only if present *before*
+    Claude acts -- corrections and preferences (PUSH_KINDS) -- plus anything manually
+    pinned. Everything else lives in the MCP pull lane and is reached on demand; a high
+    confidence score no longer buys a prompt spot, and a low one no longer loses it.
+
+    Read-only: this function must never mutate confidence (principle #1).
+
+    Priority when capped at max_items: pinned, then corrections (never dropped before
+    preferences -- you can't search for past mistakes), then preferences. Within each
+    tier, higher confidence first as a tiebreak only.
     """
+    def by_conf(es):
+        return sorted(es, key=lambda e: -e.get("confidence", 0))
+
+    pinned = by_conf([e for e in entries if e.get("pinned")])
+    corrections = by_conf([e for e in entries
+                           if e.get("kind") == "correction" and not e.get("pinned")])
+    preferences = by_conf([e for e in entries
+                           if e.get("kind") == "preference" and not e.get("pinned")])
+
     selected = []
-
-    # 1. Pinned
-    for e in entries:
-        if e.get("pinned") and e not in selected:
+    for e in pinned + corrections + preferences:
+        if e not in selected:
             selected.append(e)
-
-    # 2. Corrections
-    for e in entries:
-        if (e.get("kind") == "correction"
-                and e.get("confidence", 0) >= 0.8
-                and e not in selected):
-            selected.append(e)
-
-    # 3. Top by confidence (imports only if reinforced past 0.80)
-    remaining = []
-    for e in entries:
-        if e in selected:
-            continue
-        # Imports must be reinforced past their starting confidence to earn a prompt spot
-        if e.get("source") == "lens" and e.get("confidence", 0) <= 0.80:
-            continue
-        remaining.append(e)
-
-    remaining.sort(key=lambda e: -e.get("confidence", 0))
-    selected += remaining[:max_items - len(selected)]
 
     return selected[:max_items]
 

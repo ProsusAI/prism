@@ -32,6 +32,16 @@ def run_review(session_id: str, project_id: str) -> dict:
     if not rows:
         return {"insights": 0, "session_id": session_id, "status": "no_context"}
 
+    # Free use-signal for INJECTED (prism.md) engrams: they are never MCP-queried (they're
+    # already in context), so their only use-event is overlap between their trigger/domain/
+    # tags and what this session actually did. Pure in-process FTS-style token overlap over
+    # rows we already loaded -- $0 tokens, no LLM. Fires the same daily-idempotent impulse as
+    # an MCP retrieval. Detects *relevance*, not *application* (confidence_plan.md §3 Q3).
+    try:
+        _credit_relevant_injected(rows, project_id, config)
+    except Exception:
+        pass  # a use-signal must never break the review
+
     obs_context = _build_obs_context(rows)
     triggers = _load_existing_triggers()
     prompt = _build_prompt(obs_context, triggers)
@@ -59,6 +69,70 @@ def run_review(session_id: str, project_id: str) -> dict:
         _write_insights(insights, session_id, project_id)
 
     return {"insights": len(insights), "session_id": session_id, "status": "ok"}
+
+
+_OVERLAP_STOPWORDS = {
+    "the", "and", "for", "with", "that", "this", "from", "into", "use", "using", "used",
+    "when", "then", "than", "your", "you", "via", "are", "was", "not", "but", "all", "any",
+    "should", "must", "always", "never", "code", "file", "files", "project", "claude",
+}
+
+
+def _significant_terms(*texts) -> set:
+    """Lowercased alphanumeric tokens >= 4 chars, minus generic stopwords.
+
+    Used to compare an engram's trigger/domain/tags against session activity. Short and
+    generic tokens are dropped so overlap reflects a shared *topic*, not shared English.
+    """
+    import re
+    terms = set()
+    for text in texts:
+        if not text:
+            continue
+        for tok in re.findall(r"[A-Za-z0-9_]+", str(text).lower()):
+            if len(tok) >= 4 and tok not in _OVERLAP_STOPWORDS:
+                terms.add(tok)
+    return terms
+
+
+def _credit_relevant_injected(rows: list[dict], project_id: str, config: dict) -> int:
+    """Fire a use-event for injected (push-lane) engrams whose domain was active this session.
+
+    Overlap = distinct significant terms shared between the engram's trigger/domain/tags and
+    the session's observation summaries. An engram clears the bar at `overlap_min_terms`
+    matches (default 2) -- high enough to avoid crediting on a single common word. Crediting
+    goes through reinforce_entries, which is daily-idempotent, so repeated background reviews
+    in one session credit each engram at most once/day.
+
+    Returns the number of engrams credited.
+    """
+    from .index import list_entries, reinforce_entries
+    from .config import PUSH_KINDS
+
+    min_terms = config.get("overlap_min_terms", 2)
+
+    # Build the session's significant-term set once from the observation summaries.
+    session_terms = _significant_terms(*[expand(r.get("input_summary", "")) for r in rows])
+    if not session_terms:
+        return 0
+
+    # Injected engrams = the push lane: pinned, or kind in PUSH_KINDS (mirrors sync selection).
+    injected = [
+        e for e in list_entries(project_id=project_id)
+        if e.get("pinned") or e.get("kind") in PUSH_KINDS
+    ]
+
+    applied = []
+    for e in injected:
+        eng_terms = _significant_terms(
+            e.get("trigger", ""), e.get("domain", ""), " ".join(e.get("tags", []) or [])
+        )
+        if len(eng_terms & session_terms) >= min_terms:
+            applied.append(e["id"])
+
+    if applied:
+        reinforce_entries(applied)
+    return len(applied)
 
 
 def _build_obs_context(rows: list[dict]) -> str:

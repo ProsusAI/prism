@@ -93,6 +93,14 @@ def main() -> None:
     p_promote.add_argument("--name", dest="skill_name", help="Override auto-generated skill name")
 
     # procedures
+    # stats
+    p_stats = subparsers.add_parser("stats", help="Show how often engrams are retrieved via MCP")
+    p_stats.add_argument("--days", type=int, default=30, help="Window in days (default 30)")
+    p_stats.add_argument("--limit", type=int, default=10, help="Top engrams to show (default 10)")
+    p_stats.add_argument("--json", action="store_true", dest="json_output",
+                         help="Output machine-readable JSON")
+    p_stats.add_argument("--project", help="Override project ID")
+
     # log
     p_log = subparsers.add_parser("log", help="Show recent observations or extractions")
     p_log.add_argument("--last", type=int, default=20, help="Number of entries")
@@ -274,6 +282,11 @@ def main() -> None:
         from .bridge import cmd_promote
         cmd_promote(args.id, name_override=args.skill_name)
 
+    elif args.command == "stats":
+        from .commands import cmd_stats
+        cmd_stats(project_id=args.project, days=args.days,
+                  json_output=args.json_output, limit=args.limit)
+
     elif args.command == "log":
         from .commands import cmd_log
         cmd_log(last_n=args.last, extractions=args.extractions,
@@ -300,7 +313,7 @@ def main() -> None:
 
     # Safety net: check if auto-extraction should trigger
     # Skip for commands that already handle extraction or are too early
-    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", "dashboard", None):
+    if args.command not in ("init", "extract", "review", "config", "analyze-sessions", "sync", "disable", "enable", "uninstall", "stats", None):
         try:
             from .project import detect_project_id
             from .trigger import maybe_trigger_extraction
