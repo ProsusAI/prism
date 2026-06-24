@@ -1,3 +1,7 @@
+# Copyright © 2025 MIH AI B.V.
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file in the project root
+
 """Context sync - generates IDE-specific context files from the knowledge index.
 
 Hybrid push/pull approach:

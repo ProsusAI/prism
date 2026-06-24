@@ -1,0 +1,24 @@
+Prism
+Copyright 2025 MIH AI B.V.
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------
+
+The Prism CLI and library have NO third-party runtime dependencies. They
+use only the Python 3.12+ standard library.
+
+The optional registry Worker (templates/registry/worker/), used only by
+teams who self-host a skills registry, has the following development
+dependencies (not distributed, build/deploy only). All are permissively
+licensed:
+
+  - wrangler ............... MIT License ......... https://github.com/cloudflare/workers-sdk
+  - @cloudflare/workers-types  MIT/Apache-2.0 .... https://github.com/cloudflare/workerd
+  - typescript ............. Apache-2.0 .......... https://github.com/microsoft/TypeScript
+
+AI extraction is performed by invoking the user's locally installed and
+authenticated IDE CLIs (`claude` or Cursor `agent`). These tools are NOT
+bundled or redistributed by Prism.

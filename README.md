@@ -8,6 +8,10 @@
 
 [Get started](#get-started) · [How it works](#how-it-works) · [Configuration](#configuration) · [Commands](#commands) 
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Dependencies: stdlib only](https://img.shields.io/badge/dependencies-stdlib--only-green.svg)](#)
+
 </div>
 
 A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns your preferences, and makes Claude/Cursor remember them across sessions. Are you working in a team? Share learnings in form of reusable skills. 
@@ -15,20 +19,6 @@ A knowledge layer for Claude Code and Cursor. Prism watches how you work, learns
 **One install. Zero config for personal use. Registry config for teams.**
 
 > 💡 Run `prism dashboard` to explore your projects and engrams in a local web UI.
-
-## Important - Upgrading from before 26 May 2026
-
-Prism switched its observation storage from JSONL to SQLite. If you installed before this date, run the following once to migrate your data:
-
-```bash
-cd ~/Documents/prism          # your prism clone
-git pull
-python3 migrate_observations.py
-./install.sh
-```
-
-Then re-run `prism init` in each project you use Prism with.
-Your engrams are unaffected. The migration archives your old `.jsonl` files under `~/.prism/projects/` and imports them into `~/.prism/prism.db`.
 
 ## What it does
 
@@ -232,3 +222,15 @@ Key settings: `extract_threshold` (observations before auto-extraction), `agent_
 [DOCS.md](DOCS.md) -- Comprehensive technical documentation covering architecture, data formats, extraction pipeline, MCP protocol, slash commands, and configuration reference.
 
 [prism_commands.md](prism_commands.md) -- Comprehensive list of user commands, claude skills and MCP tools. 
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the test command, and the project's architectural constraints. All participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report security vulnerabilities privately — see [SECURITY.md](SECURITY.md). Do not open public issues for security reports.
+
+## License
+
+Prism is licensed under the [Apache License 2.0](LICENSE). Copyright © 2025 MIH AI B.V.
