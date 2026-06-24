@@ -1,3 +1,7 @@
+# Copyright © 2025 MIH AI B.V.
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file in the project root
+
 """Simulation harness for the confidence protocol (confidence_plan.md §8).
 
 Validates the *pure math* (lib/confidence.py) against synthetic multi-day,

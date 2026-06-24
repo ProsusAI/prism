@@ -1,3 +1,7 @@
+# Copyright © 2025 MIH AI B.V.
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file in the project root
+
 """Prepare observation input_summary for SQLite: scrub, compress, truncate."""
 
 from __future__ import annotations

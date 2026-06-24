@@ -1,3 +1,7 @@
+# Copyright © 2025 MIH AI B.V.
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file in the project root
+
 """FTS5 search over Prism observations (primary prism.db only).
 
 Replaces the old session-index.db / sessions_fts approach. Queries the

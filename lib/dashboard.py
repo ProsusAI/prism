@@ -1,3 +1,7 @@
+# Copyright © 2025 MIH AI B.V.
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file in the project root
+
 """Prism dashboard - a local-first, zero-dependency web view of your knowledge.
 
 Serves a small single-page UI (lib/dashboard.html) backed by a stdlib

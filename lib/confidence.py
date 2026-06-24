@@ -1,3 +1,7 @@
+# Copyright © 2025 MIH AI B.V.
+# Licensed under the Apache License, Version 2.0
+# See LICENSE file in the project root
+
 """Pure confidence math — one impulse up, one exponential curve down.
 
 Design principle #3: confidence is a function of usage *timestamps*, not an event
