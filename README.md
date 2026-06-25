@@ -233,4 +233,4 @@ Please report security vulnerabilities privately — see [SECURITY.md](SECURITY.
 
 ## License
 
-Prism is licensed under the [Apache License 2.0](LICENSE). Copyright © 2025 MIH AI B.V.
+Prism is licensed under the [Apache License 2.0](LICENSE). Copyright © 2026 MIH AI B.V.
