@@ -22,3 +22,10 @@ licensed:
 AI extraction is performed by invoking the user's locally installed and
 authenticated IDE CLIs (`claude` or Cursor `agent`). These tools are NOT
 bundled or redistributed by Prism.
+
+------------------------------------------------------------------------
+Authorship
+------------------------------------------------------------------------
+
+Portions of this project were co-authored by Claude Code under human
+direction and review.
