@@ -63,3 +63,5 @@ See [CLAUDE.md](CLAUDE.md) and [DOCS.md](DOCS.md) for the full design rationale.
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE), the same license that covers this project.
+
+By contributing, you agree to assign copyright of your contribution to MIH AI B.V.
